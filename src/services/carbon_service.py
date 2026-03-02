@@ -146,12 +146,20 @@ class CarbonAwareSDKClient:
             for item in data:
                 for point in item.get("forecastData", []):
                     forecasts.append(point)
-            # Limit to the requested horizon
-            cutoff = datetime.now(timezone.utc) + timedelta(hours=horizon_hours)
-            return [
-                p for p in forecasts
-                if _parse_iso(p.get("timestamp", "")) <= cutoff
-            ]
+            # Limit to the requested horizon; also drop points whose timestamp
+            # could not be parsed (sentinel datetime.min means invalid ISO string).
+            now = datetime.now(timezone.utc)
+            cutoff = now + timedelta(hours=horizon_hours)
+            _min = datetime.min.replace(tzinfo=timezone.utc)
+            valid = []
+            for p in forecasts:
+                ts = _parse_iso(p.get("timestamp", ""))
+                if ts == _min:
+                    logger.debug("Dropping forecast point with unparseable timestamp: %s", p)
+                    continue
+                if ts <= cutoff:
+                    valid.append(p)
+            return valid
         except Exception as exc:
             logger.warning("Carbon Aware SDK forecast request failed: %s", exc)
             return []
@@ -268,10 +276,23 @@ class CarbonService:
         data = await self._sdk.get_current_intensity(sdk_location)
         if data:
             # SDK response schema: {"rating": float, "location": str, ...}
-            rating = float(data.get("rating", 0))
-            if rating > 0:
+            try:
+                rating = float(data.get("rating", 0))
+            except (TypeError, ValueError):
+                rating = 0.0
+            # Sanity-check: intensity must be a finite, positive value in a
+            # realistic range.  Grid intensities above 1 000 gCO₂e/kWh are
+            # not credible; NaN/Infinity would silently corrupt downstream SCI.
+            if 0 < rating < 10_000 and rating == rating:  # last clause rejects NaN
                 self._cache.set(sdk_location, rating)
                 return rating, "GSF Carbon Aware SDK"
+            if rating != 0:
+                logger.warning(
+                    "Carbon Aware SDK returned out-of-range intensity %.4f for '%s'; "
+                    "falling back to regional average.",
+                    rating,
+                    sdk_location,
+                )
 
         # Fallback to regional average
         fallback = REGIONAL_FALLBACK_INTENSITIES.get(
