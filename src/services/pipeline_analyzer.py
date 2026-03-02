@@ -341,10 +341,19 @@ class PipelineAnalyzer:
         return total, estimates, reports
 
     def _infer_location(self, jobs: list[JobData]) -> str:
-        """Pick the first non-None runner location from the job list."""
+        """Pick the first non-None runner location from the job list.
+
+        Falls back to the GitLab SaaS default region when no location can be
+        inferred.  A warning is emitted so operators can supply an explicit
+        ``runner_location`` to improve carbon-intensity accuracy.
+        """
         for job in jobs:
             if job.runner_location:
                 return job.runner_location
+        logger.warning(
+            "No runner location found in job data; defaulting to 'us-east1'. "
+            "Provide runner_location in the request for more accurate carbon intensity."
+        )
         return "us-east1"  # GitLab SaaS default region
 
     @staticmethod
