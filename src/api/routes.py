@@ -29,11 +29,10 @@ from src.api.schemas import (
     SchedulingRecommendation,
     StandardsInfoResponse,
 )
-from src.calculators.sci_calculator import SCICalculator
 from src.database import get_session
-from src.estimators.energy_estimator import GSFEnergyEstimator
 from src.models.pipeline import GSFComplianceLog, PipelineJob, PipelineRun
 from src.services.carbon_service import CarbonService
+from src.services.pipeline_analyzer import PipelineAnalysisReport, PipelineAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +42,8 @@ router = APIRouter(prefix="/api/v1")
 # Shared service instances (created once, reused across requests)
 # ---------------------------------------------------------------------------
 
-_energy_estimator = GSFEnergyEstimator()
-_sci_calculator = SCICalculator()
 _carbon_service = CarbonService()
+_analyzer = PipelineAnalyzer(carbon_service=_carbon_service)
 
 # ---------------------------------------------------------------------------
 # GSF standards metadata
@@ -78,94 +76,121 @@ GSF_STANDARDS = [
     },
 ]
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _build_urgency_placeholder(commit_messages: list[str]) -> tuple[str, float]:
-    """
-    Placeholder urgency classifier (stub until NLP module is implemented).
-
-    Returns (urgency_class, confidence).
-    Classes: 'urgent', 'normal', 'deferrable'
-    """
-    if not commit_messages:
-        return "normal", 0.5
-
-    text = " ".join(commit_messages).lower()
-    urgent_keywords = {"hotfix", "critical", "security", "emergency", "urgent", "fix!"}
-    deferrable_keywords = {"docs", "readme", "chore", "refactor", "style", "lint", "typo"}
-
-    tokens = set(text.split())
-    if urgent_keywords & tokens:
-        return "urgent", 0.80
-    if deferrable_keywords & tokens:
-        return "deferrable", 0.75
-    return "normal", 0.65
-
-
-async def _persist_pipeline_run(
+async def _persist_report(
     session: AsyncSession,
-    request: PipelineAnalyzeRequest,
-    total_energy_kwh: float,
-    job_estimates: list,
-    carbon_intensity: float,
-    carbon_source: str,
-    sci_result,
-    urgency_class: str,
-    urgency_confidence: float,
-) -> PipelineRun:
-    """Create and persist a PipelineRun and its jobs to the database."""
+    report: PipelineAnalysisReport,
+) -> int:
+    """Persist an analysis report to the database; return the new row ID."""
     run = PipelineRun(
-        gitlab_pipeline_id=request.gitlab_pipeline_id,
-        project_id=request.project_id,
-        runner_location=request.runner_location,
-        duration_seconds=int(sum(j.duration_seconds for j in request.jobs)),
-        energy_kwh=total_energy_kwh,
-        carbon_intensity_gco2_kwh=carbon_intensity,
-        carbon_data_source=carbon_source,
-        operational_carbon_gco2=sci_result.operational_carbon_gco2,
-        embodied_carbon_gco2=sci_result.embodied_carbon_gco2,
-        total_carbon_gco2=sci_result.total_carbon_gco2,
-        sci_score=sci_result.sci_score,
-        sci_functional_unit=sci_result.functional_unit,
-        urgency_classification=urgency_class,
-        urgency_confidence=urgency_confidence,
+        gitlab_pipeline_id=report.gitlab_pipeline_id,
+        project_id=report.project_id,
+        runner_location=report.runner_location,
+        duration_seconds=int(sum(j.duration_seconds for j in report.job_reports)),
+        energy_kwh=report.total_energy_kwh,
+        energy_methodology=report.energy_methodology,
+        carbon_intensity_gco2_kwh=report.carbon_intensity_gco2_kwh,
+        carbon_data_source=report.carbon_data_source,
+        operational_carbon_gco2=report.sci.operational_carbon_gco2,
+        embodied_carbon_gco2=report.sci.embodied_carbon_gco2,
+        total_carbon_gco2=report.sci.total_carbon_gco2,
+        sci_score=report.sci.sci_score,
+        sci_functional_unit=report.sci.functional_unit,
+        urgency_classification=report.urgency_class,
+        urgency_confidence=report.urgency_confidence,
     )
     session.add(run)
-    await session.flush()  # get run.id
+    await session.flush()
 
-    # Persist per-job estimates
-    for job_input, estimate in zip(request.jobs, job_estimates):
-        job = PipelineJob(
-            pipeline_run_id=run.id,
-            gitlab_job_id=job_input.gitlab_job_id,
-            job_name=job_input.job_name,
-            runner_type=job_input.runner_type,
-            runner_tags=",".join(job_input.runner_tags),
-            duration_seconds=int(job_input.duration_seconds),
-            cpu_utilization_percent=job_input.cpu_utilization_percent,
-            energy_kwh=estimate.energy_kwh,
-            runner_tdp_watts=estimate.runner_spec.tdp_watts,
-            tdp_factor=estimate.tdp_factor,
+    for jr in report.job_reports:
+        session.add(
+            PipelineJob(
+                pipeline_run_id=run.id,
+                job_name=jr.job_name,
+                runner_type=jr.runner_type,
+                duration_seconds=int(jr.duration_seconds),
+                cpu_utilization_percent=jr.cpu_utilization_percent,
+                energy_kwh=jr.energy_kwh,
+                runner_tdp_watts=jr.runner_tdp_watts,
+                tdp_factor=jr.tdp_factor,
+            )
         )
-        session.add(job)
 
-    # Log GSF compliance
     for std in GSF_STANDARDS:
-        log = GSFComplianceLog(
-            pipeline_run_id=run.id,
-            standard_name=std["name"],
-            standard_version=std["version"],
-            compliance_status="compliant",
+        session.add(
+            GSFComplianceLog(
+                pipeline_run_id=run.id,
+                standard_name=std["name"],
+                standard_version=std["version"],
+                compliance_status="compliant",
+            )
         )
-        session.add(log)
 
     await session.commit()
-    await session.refresh(run)
-    return run
+    return run.id
+
+
+def _report_to_response(
+    report: PipelineAnalysisReport,
+    pipeline_db_id: int | None = None,
+) -> PipelineAnalysisResponse:
+    """Convert an analysis report to the API response schema."""
+    per_job = [
+        {
+            "job_name": jr.job_name,
+            "stage": jr.stage,
+            "duration_seconds": jr.duration_seconds,
+            "runner_type": jr.runner_type,
+            "runner_tdp_watts": jr.runner_tdp_watts,
+            "cpu_utilization_percent": jr.cpu_utilization_percent,
+            "tdp_factor": round(jr.tdp_factor, 4),
+            "avg_power_watts": round(jr.avg_power_watts, 2),
+            "energy_kwh": round(jr.energy_kwh, 8),
+        }
+        for jr in report.job_reports
+    ]
+
+    window = report.scheduling_window
+    best_window_dict = (
+        {
+            "timestamp": window.timestamp,
+            "intensity_gco2_kwh": window.intensity_gco2_kwh,
+            "location": window.location,
+            "savings_percent": window.savings_percent,
+        }
+        if window
+        else None
+    )
+
+    return PipelineAnalysisResponse(
+        pipeline_id=pipeline_db_id,
+        gitlab_pipeline_id=report.gitlab_pipeline_id,
+        project_id=report.project_id,
+        analyzed_at=report.analyzed_at,
+        energy=EnergyBreakdown(
+            total_energy_kwh=round(report.total_energy_kwh, 8),
+            methodology=report.energy_methodology,
+            per_job=per_job,
+        ),
+        carbon_intensity=CarbonIntensityInfo(
+            location=report.runner_location,
+            intensity_gco2_kwh=round(report.carbon_intensity_gco2_kwh, 2),
+            source=report.carbon_data_source,
+        ),
+        sci=SCIBreakdown(**report.sci.to_dict()),
+        scheduling=SchedulingRecommendation(
+            can_defer=report.can_defer,
+            urgency_class=report.urgency_class,
+            urgency_confidence=report.urgency_confidence,
+            best_window=best_window_dict,
+            message=report.scheduling_message,
+        ),
+        gsf_standards_used=[s["name"] for s in GSF_STANDARDS],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -181,127 +206,53 @@ async def analyze_pipeline(
     """
     Analyze a CI/CD pipeline using GSF standards and return an SCI report.
 
-    This endpoint:
-    1. Estimates energy using GSF Impact Framework (Teads curve + SPECpower)
-    2. Fetches carbon intensity from GSF Carbon Aware SDK
-    3. Calculates SCI per ISO/IEC 21031:2024
-    4. Classifies urgency via NLP (placeholder until Week 3 NLP module)
-    5. Generates carbon-aware scheduling recommendations
-    6. Persists results to PostgreSQL
+    Provide either:
+    - `gitlab_pipeline_id` + `project_id` to fetch live data (requires GITLAB_TOKEN)
+    - `jobs` list for offline/demo analysis (no GitLab token needed)
     """
-    if not request.jobs:
+    if not request.jobs and not (request.gitlab_pipeline_id and request.project_id):
         raise HTTPException(
             status_code=422,
-            detail="No jobs provided. Supply at least one job in the 'jobs' field.",
+            detail="Provide either 'jobs' for offline analysis, or "
+                   "'gitlab_pipeline_id' + 'project_id' for live GitLab fetching.",
         )
 
-    # 1. Energy estimation (GSF Impact Framework)
-    jobs_dicts = [
-        {
-            "duration_seconds": j.duration_seconds,
-            "runner_type": j.runner_type,
-            "runner_tags": j.runner_tags,
-            "cpu_utilization_percent": j.cpu_utilization_percent,
-        }
-        for j in request.jobs
-    ]
-    total_energy_kwh, job_estimates = _energy_estimator.estimate_pipeline_energy(jobs_dicts)
-
-    # 2. Carbon intensity (GSF Carbon Aware SDK)
-    location = request.runner_location or "us-east1"
-    carbon_intensity, carbon_source = await _carbon_service.get_intensity(location)
-
-    # 3. SCI calculation (ISO/IEC 21031:2024)
-    total_duration = sum(j.duration_seconds for j in request.jobs)
-    sci_result = _sci_calculator.calculate(
-        energy_kwh=total_energy_kwh,
-        carbon_intensity_gco2_kwh=carbon_intensity,
-        duration_seconds=total_duration,
-        functional_unit="pipeline_run",
-    )
-
-    # 4. Urgency classification (stub — NLP module plugs in here in Week 3)
-    urgency_class, urgency_confidence = _build_urgency_placeholder(request.commit_messages)
-
-    # 5. Scheduling recommendation
-    best_window = None
-    if urgency_class == "deferrable":
-        best_window = await _carbon_service.find_best_execution_window(
-            location=location,
-            duration_minutes=max(1, int(total_duration / 60)),
-        )
-
-    can_defer = urgency_class == "deferrable"
-    if can_defer and best_window:
-        sched_message = (
-            f"Pipeline can be deferred to {best_window.get('timestamp', 'N/A')} "
-            f"for lower carbon intensity "
-            f"({best_window.get('intensity_gco2_kwh', 0):.1f} gCO₂e/kWh vs "
-            f"current {carbon_intensity:.1f} gCO₂e/kWh)."
-        )
-    elif can_defer:
-        sched_message = "Pipeline is deferrable but no forecast data available."
-    else:
-        sched_message = f"Pipeline classified as '{urgency_class}' — run immediately."
-
-    # 6. Persist to database
     try:
-        run = await _persist_pipeline_run(
-            session=session,
-            request=request,
-            total_energy_kwh=total_energy_kwh,
-            job_estimates=job_estimates,
-            carbon_intensity=carbon_intensity,
-            carbon_source=carbon_source,
-            sci_result=sci_result,
-            urgency_class=urgency_class,
-            urgency_confidence=urgency_confidence,
-        )
-        pipeline_db_id = run.id
+        if request.gitlab_pipeline_id and request.project_id and not request.jobs:
+            report = await _analyzer.analyze_from_gitlab(
+                project_id=request.project_id,
+                pipeline_id=request.gitlab_pipeline_id,
+            )
+        else:
+            jobs_dicts = [
+                {
+                    "gitlab_job_id": j.gitlab_job_id,
+                    "job_name": j.job_name,
+                    "runner_type": j.runner_type,
+                    "runner_tags": j.runner_tags,
+                    "duration_seconds": j.duration_seconds,
+                    "cpu_utilization_percent": j.cpu_utilization_percent,
+                }
+                for j in request.jobs
+            ]
+            report = await _analyzer.analyze_from_data(
+                jobs=jobs_dicts,
+                commit_messages=request.commit_messages,
+                runner_location=request.runner_location,
+                gitlab_pipeline_id=request.gitlab_pipeline_id,
+                project_id=request.project_id,
+            )
     except Exception as exc:
-        logger.error("Database persistence failed: %s", exc)
-        pipeline_db_id = None
+        logger.error("Pipeline analysis failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
 
-    # 7. Build response
-    per_job_data = [
-        {
-            "job_name": request.jobs[i].job_name,
-            "duration_seconds": request.jobs[i].duration_seconds,
-            "runner_type": est.runner_spec.name,
-            "runner_tdp_watts": est.runner_spec.tdp_watts,
-            "cpu_utilization_percent": est.cpu_utilization_percent,
-            "tdp_factor": round(est.tdp_factor, 4),
-            "avg_power_watts": round(est.avg_power_watts, 2),
-            "energy_kwh": round(est.energy_kwh, 8),
-        }
-        for i, est in enumerate(job_estimates)
-    ]
+    pipeline_db_id: int | None = None
+    try:
+        pipeline_db_id = await _persist_report(session, report)
+    except Exception as exc:
+        logger.error("DB persistence failed (returning result anyway): %s", exc)
 
-    return PipelineAnalysisResponse(
-        pipeline_id=pipeline_db_id,
-        gitlab_pipeline_id=request.gitlab_pipeline_id,
-        project_id=request.project_id,
-        analyzed_at=datetime.now(timezone.utc),
-        energy=EnergyBreakdown(
-            total_energy_kwh=round(total_energy_kwh, 8),
-            methodology="GSF Impact Framework Teads Curve + SPECpower",
-            per_job=per_job_data,
-        ),
-        carbon_intensity=CarbonIntensityInfo(
-            location=location,
-            intensity_gco2_kwh=round(carbon_intensity, 2),
-            source=carbon_source,
-        ),
-        sci=SCIBreakdown(**sci_result.to_dict()),
-        scheduling=SchedulingRecommendation(
-            can_defer=can_defer,
-            urgency_class=urgency_class,
-            urgency_confidence=urgency_confidence,
-            best_window=best_window,
-            message=sched_message,
-        ),
-        gsf_standards_used=[s["name"] for s in GSF_STANDARDS],
-    )
+    return _report_to_response(report, pipeline_db_id)
 
 
 @router.get("/pipeline/{pipeline_id}/report", response_model=PipelineAnalysisResponse)
@@ -321,7 +272,7 @@ async def get_pipeline_report(
     if run is None:
         raise HTTPException(status_code=404, detail=f"Pipeline run {pipeline_id} not found.")
 
-    per_job_data = [
+    per_job = [
         {
             "job_name": job.job_name,
             "duration_seconds": job.duration_seconds,
@@ -332,18 +283,6 @@ async def get_pipeline_report(
         for job in run.jobs
     ]
 
-    sci = SCIBreakdown(
-        sci_score_gco2e=float(run.sci_score or 0),
-        functional_unit=run.sci_functional_unit or "pipeline_run",
-        energy_kwh=float(run.energy_kwh or 0),
-        carbon_intensity_gco2_kwh=float(run.carbon_intensity_gco2_kwh or 0),
-        operational_carbon_gco2e=float(run.operational_carbon_gco2 or 0),
-        embodied_carbon_gco2e=float(run.embodied_carbon_gco2 or 0),
-        total_carbon_gco2e=float(run.total_carbon_gco2 or 0),
-        methodology="SCI ISO/IEC 21031:2024",
-        embodied_method="stored",
-    )
-
     return PipelineAnalysisResponse(
         pipeline_id=run.id,
         gitlab_pipeline_id=run.gitlab_pipeline_id,
@@ -352,19 +291,29 @@ async def get_pipeline_report(
         energy=EnergyBreakdown(
             total_energy_kwh=float(run.energy_kwh or 0),
             methodology=run.energy_methodology,
-            per_job=per_job_data,
+            per_job=per_job,
         ),
         carbon_intensity=CarbonIntensityInfo(
             location=run.runner_location or "unknown",
             intensity_gco2_kwh=float(run.carbon_intensity_gco2_kwh or 0),
             source=run.carbon_data_source or "stored",
         ),
-        sci=sci,
+        sci=SCIBreakdown(
+            sci_score_gco2e=float(run.sci_score or 0),
+            functional_unit=run.sci_functional_unit or "pipeline_run",
+            energy_kwh=float(run.energy_kwh or 0),
+            carbon_intensity_gco2_kwh=float(run.carbon_intensity_gco2_kwh or 0),
+            operational_carbon_gco2e=float(run.operational_carbon_gco2 or 0),
+            embodied_carbon_gco2e=float(run.embodied_carbon_gco2 or 0),
+            total_carbon_gco2e=float(run.total_carbon_gco2 or 0),
+            methodology="SCI ISO/IEC 21031:2024",
+            embodied_method="stored",
+        ),
         scheduling=SchedulingRecommendation(
             can_defer=run.urgency_classification == "deferrable",
             urgency_class=run.urgency_classification or "unknown",
             urgency_confidence=float(run.urgency_confidence or 0),
-            message="Historical record — no live scheduling data.",
+            message="Historical record.",
         ),
         gsf_standards_used=[s["name"] for s in GSF_STANDARDS],
     )
