@@ -110,8 +110,9 @@ async def _persist_report(
         session.add(
             PipelineJob(
                 pipeline_run_id=run.id,
-                job_name=jr.job_name,
-                runner_type=jr.runner_type,
+                # Truncate to DB column limits to avoid silent truncation errors
+                job_name=jr.job_name[:255] if jr.job_name else None,
+                runner_type=jr.runner_type[:100] if jr.runner_type else None,
                 duration_seconds=int(jr.duration_seconds),
                 cpu_utilization_percent=jr.cpu_utilization_percent,
                 energy_kwh=jr.energy_kwh,
