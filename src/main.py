@@ -30,6 +30,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.agent_routes import agent_tools_router, webhook_router
+from src.api.analytics_routes import analytics_router
 from src.api.routes import router
 from src.config import settings
 from src.database import create_tables
@@ -83,3 +84,4 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(agent_tools_router)
 app.include_router(webhook_router)
+app.include_router(analytics_router)
