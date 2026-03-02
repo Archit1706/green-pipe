@@ -261,6 +261,17 @@ class GitLabClient:
             logger.error("GitLab API error: %s", exc)
             return []
 
+        # Guard: GitLab occasionally returns None for the SHA field when a
+        # pipeline is queued but has not yet been assigned a commit (e.g. a
+        # parent pipeline that hasn't started child pipelines yet).
+        if not sha:
+            logger.warning(
+                "Pipeline %s/%s has no SHA — skipping commit fetch.",
+                project_id,
+                pipeline_id,
+            )
+            return []
+
         commit = self.get_commit(project_id, sha)
         return [commit] if commit else []
 
