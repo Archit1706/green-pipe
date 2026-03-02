@@ -1,0 +1,231 @@
+# GreenPipe — Carbon-Aware CI/CD Agent
+
+> **First GitLab Duo Agent implementing Green Software Foundation standards**
+
+## Description
+
+GreenPipe is an intelligent GitLab Duo Agent that brings **Green Software Foundation (GSF)
+standards** natively into CI/CD pipelines. It automatically measures the carbon footprint of
+every pipeline run, classifies urgency using AI, and recommends carbon-aware scheduling to
+reduce emissions.
+
+### Value Proposition
+
+- **NOT just a calculator** — an always-on agent that monitors every pipeline automatically
+- **NOT reinventing** — built on proven GSF standards (SCI, Carbon Aware SDK, Impact Framework)
+- **IS innovating** — first GitLab-native automation + NLP intelligence layer on top of GSF standards
+
+---
+
+## Standards Implemented
+
+| Standard | Version | Role |
+| -------- | ------- | ---- |
+| **Software Carbon Intensity (SCI)** | ISO/IEC 21031:2024 | `SCI = ((E × I) + M) / R` — canonical formula for software carbon scoring |
+| **GSF Carbon Aware SDK** | latest | Real-time and forecast grid carbon intensity data |
+| **GSF Impact Framework — Teads Curve** | latest | CPU utilization → power factor mapping for energy estimation |
+| **ECO-CI SPECpower approach** | research | Runner hardware TDP mapping via SPECpower benchmarks |
+
+---
+
+## Tools
+
+### `analyze_pipeline`
+
+Analyzes a completed CI/CD pipeline using GSF SCI methodology.
+
+**Endpoint:** `POST /agent/tools/analyze_pipeline`
+
+**Input:**
+```json
+{
+  "project_id": 12345,
+  "pipeline_id": 67890,
+  "runner_location": "us-east1"
+}
+```
+
+**Output:** Full GSF-compliant analysis report including SCI score, energy breakdown,
+carbon intensity, and scheduling recommendation.
+
+---
+
+### `generate_sci_report`
+
+Generates a formatted markdown SCI report and optionally posts it as a GitLab MR comment.
+
+**Endpoint:** `POST /agent/tools/generate_sci_report`
+
+**Input:**
+```json
+{
+  "project_id": 12345,
+  "pipeline_id": 67890,
+  "post_as_comment": true,
+  "mr_iid": 42
+}
+```
+
+**Output:** Formatted markdown report with SCI breakdown, energy data, and
+carbon-aware recommendations. When `post_as_comment` is `true`, the report is
+posted directly to the merge request.
+
+---
+
+### `suggest_scheduling`
+
+Recommends optimal pipeline execution windows based on carbon intensity forecasts.
+
+**Endpoint:** `POST /agent/tools/suggest_scheduling`
+
+**Input:**
+```json
+{
+  "location": "us-east1",
+  "duration_minutes": 15,
+  "horizon_hours": 24
+}
+```
+
+**Output:** Best execution window with carbon intensity forecast and estimated
+savings percentage.
+
+---
+
+### `classify_urgency`
+
+Uses AI to classify commit message urgency. Determines whether a pipeline can be
+safely deferred to a lower-carbon window.
+
+**Endpoint:** `POST /agent/tools/classify_urgency`
+
+**Input:**
+```json
+{
+  "commit_messages": ["hotfix: fix critical auth bypass", "docs: update README"],
+  "pipeline_id": 67890,
+  "project_id": 12345
+}
+```
+
+**Output:** Urgency class (`urgent` / `normal` / `deferrable`) with confidence score
+and a plain-language explanation.
+
+---
+
+## Triggers
+
+### Pipeline Completion
+
+GreenPipe automatically triggers on every pipeline completion event.
+
+**Webhook URL:** `POST /agent/webhooks/pipeline`
+
+Configure in **GitLab → Settings → Webhooks** with:
+- Trigger: **Pipeline events**
+- Secret token: value of `GITLAB_WEBHOOK_SECRET`
+
+When triggered, GreenPipe:
+
+1. Checks pipeline status is terminal (`success`, `failed`, `canceled`)
+2. Fetches job data and commit messages from GitLab API
+3. Estimates energy using GSF Impact Framework Teads Curve
+4. Queries carbon intensity from GSF Carbon Aware SDK
+5. Calculates SCI per ISO/IEC 21031:2024
+6. Classifies urgency via DistilBERT NLP (INT8 quantized)
+7. Posts a sustainability report as an MR comment (if an open MR exists)
+
+### `@greenpipe` Mention
+
+Responds to `@greenpipe` mentions in merge request comments.
+
+**Webhook URL:** `POST /agent/webhooks/mention`
+
+Configure in **GitLab → Settings → Webhooks** with:
+- Trigger: **Comments**
+- Secret token: value of `GITLAB_WEBHOOK_SECRET`
+
+Supported commands (case-insensitive):
+
+| Command | Description |
+| ------- | ----------- |
+| `@greenpipe analyze` | Analyze the latest pipeline for this MR |
+| `@greenpipe report` | Generate a full GSF SCI report (same as analyze) |
+| `@greenpipe schedule` | Show carbon-optimal execution windows |
+| `@greenpipe help` | List available commands |
+
+---
+
+## Context
+
+GreenPipe accesses:
+
+- Pipeline job data (duration, runner type, CPU utilization)
+- Commit history (for NLP urgency classification)
+- Runner specification metadata (for energy estimation via SPECpower)
+- Real-time and forecast carbon intensity data (via GSF Carbon Aware SDK)
+- Historical pipeline analytics (PostgreSQL — optional)
+
+---
+
+## Intelligence
+
+| Capability | Technology | What Makes It Unique |
+| ---------- | ---------- | -------------------- |
+| **NLP urgency classification** | DistilBERT fine-tuned on 256 commit examples + keyword fallback | Distinguishes `hotfix:` emergencies from `docs:` deferrals automatically |
+| **INT8 quantized inference** | PyTorch dynamic quantization | ~60% energy reduction vs. FP32, aligned with GSF Sustainable Design criteria |
+| **Carbon-aware scheduling** | GSF Carbon Aware SDK 24-hour forecasts | Finds lowest-carbon window in next 24 hours for deferrable pipelines |
+| **Standards-based scoring** | ISO/IEC 21031:2024 SCI formula | Vendor-neutral, auditable carbon metric every developer can understand |
+
+---
+
+## Configuration
+
+Set these environment variables (see `.env.example`):
+
+```env
+# Required for live GitLab API access
+GITLAB_TOKEN=<personal-access-token>      # Scopes: api, ai_features
+
+# Required for webhook authentication
+GITLAB_WEBHOOK_SECRET=<random-secret>     # Must match the GitLab webhook secret token
+
+# Optional: self-hosted Carbon Aware SDK endpoint
+CARBON_AWARE_SDK_URL=http://localhost:5073
+
+# Optional: PostgreSQL for historical analytics
+DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/greenpipe
+```
+
+---
+
+## API Quick Reference
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| `POST` | `/api/v1/pipeline/analyze` | Offline or live pipeline analysis |
+| `GET`  | `/api/v1/pipeline/{id}/report` | Fetch stored report |
+| `GET`  | `/api/v1/pipeline/{id}/sci` | Fetch stored SCI breakdown |
+| `GET`  | `/api/v1/standards/info` | List implemented GSF standards |
+| `GET`  | `/api/v1/health` | Health check |
+| `POST` | `/agent/tools/analyze_pipeline` | Agent tool: analyze pipeline |
+| `POST` | `/agent/tools/generate_sci_report` | Agent tool: generate + post report |
+| `POST` | `/agent/tools/suggest_scheduling` | Agent tool: find best window |
+| `POST` | `/agent/tools/classify_urgency` | Agent tool: NLP urgency classification |
+| `POST` | `/agent/webhooks/pipeline` | Pipeline completion webhook |
+| `POST` | `/agent/webhooks/mention` | @greenpipe mention webhook |
+
+---
+
+## Attribution
+
+Built on **Green Software Foundation** standards:
+
+- Energy calculations: [GSF Impact Framework](https://if.greensoftware.foundation/)
+- Carbon intensity: [GSF Carbon Aware SDK](https://github.com/Green-Software-Foundation/carbon-aware-sdk)
+- SCI scoring: [ISO/IEC 21031:2024](https://sci.greensoftware.foundation/)
+- Runner mapping: [ECO-CI SPECpower approach](https://www.green-coding.io/products/eco-ci/)
+
+---
+
+*GreenPipe — the first GitLab-native automation layer for Green Software Foundation standards.*
