@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -19,14 +19,23 @@ class JobInput(BaseModel):
     """Data for a single CI/CD job within a pipeline."""
 
     gitlab_job_id: int | None = None
-    job_name: str | None = None
+    job_name: str | None = Field(default=None, max_length=255)
     runner_type: str | None = Field(
         default=None,
+        max_length=100,
         examples=["saas-linux-medium-amd64"],
     )
-    runner_tags: list[str] = Field(default_factory=list)
-    duration_seconds: float = Field(ge=0, examples=[600.0])
+    runner_tags: list[str] = Field(default_factory=list, max_length=20)
+    # ge=1: zero-duration jobs produce zero energy and break embodied carbon math
+    # le=86400: cap at 24 hours — no real CI job runs longer
+    duration_seconds: float = Field(ge=1, le=86400, examples=[600.0])
     cpu_utilization_percent: float = Field(default=50.0, ge=0, le=100)
+
+    @field_validator("runner_tags")
+    @classmethod
+    def sanitize_runner_tags(cls, tags: list[str]) -> list[str]:
+        """Strip whitespace and drop empty strings from runner tag list."""
+        return [t.strip() for t in tags if t.strip()][:20]
 
 
 class PipelineAnalyzeRequest(BaseModel):
