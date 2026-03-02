@@ -1,0 +1,257 @@
+message,label
+hotfix: fix critical null pointer exception in production auth service,urgent
+security: patch CVE-2024-1234 remote code execution vulnerability,urgent
+emergency rollback of payment processing service to v2.1.3,urgent
+fix: production database connection pool exhaustion causing 503 errors,urgent
+critical: fix memory leak in request handler causing OOM crashes,urgent
+hotfix: correct broken SSL certificate validation bypassing security checks,urgent
+security patch: prevent SQL injection in user search endpoint,urgent
+incident: fix race condition causing data corruption in order processing,urgent
+revert: undo migration that broke foreign key constraints in prod,urgent
+hotfix: fix infinite loop in background job processor,urgent
+critical security: rotate exposed API keys and update authentication,urgent
+fix production bug: checkout fails for orders over $1000,urgent
+emergency: disable broken OAuth provider causing login failures for all users,urgent
+hotfix: fix crash when processing malformed UTF-8 input in parser,urgent
+security: add missing CSRF protection to admin endpoints,urgent
+critical fix: repair broken email notification delivery pipeline,urgent
+patch: fix data loss bug in file upload when request times out,urgent
+hotfix: resolve deadlock in database transaction during peak load,urgent
+fix: prevent XSS vulnerability in user-generated content renderer,urgent
+production emergency: fix broken deployment that took down all API servers,urgent
+hotfix: correct off-by-one error in payment amount calculation,urgent
+security: revoke compromised service account credentials immediately,urgent
+critical: fix broken authentication allowing unauthenticated access to admin,urgent
+hotfix: repair corrupted session tokens after key rotation,urgent
+fix urgent: certificate expiry causing all HTTPS connections to fail,urgent
+production: fix missing index causing full table scans timing out queries,urgent
+hotfix: fix broken webhook signature validation accepting invalid requests,urgent
+security hotfix: sanitize log output leaking user passwords in plaintext,urgent
+critical: stop duplicate charge bug in subscription renewal flow,urgent
+fix: resolve out-of-disk issue on primary database server,urgent
+hotfix: repair broken CI/CD pipeline after infrastructure migration,urgent
+security: patch prototype pollution vulnerability in config parser,urgent
+critical bug: fix race condition dropping messages in queue processor,urgent
+hotfix: fix null dereference crash on user logout,urgent
+emergency: fix broken health checks causing pods to restart continuously,urgent
+production fix: correct reversed greater/less-than check in rate limiter,urgent
+hotfix: patch SSRF vulnerability in image proxy endpoint,urgent
+security: prevent timing attack on token comparison in auth middleware,urgent
+critical: fix broken database replication causing read replicas to serve stale data,urgent
+hotfix: correct integer overflow in session expiry timestamp calculation,urgent
+fix: resolve TLS handshake failures after OpenSSL upgrade,urgent
+production hotfix: correct misconfigured firewall rules blocking valid traffic,urgent
+security: remove hardcoded admin password accidentally committed to repo,urgent
+critical: fix event loop blocking causing API request timeouts,urgent
+hotfix: repair broken pagination returning duplicate records,urgent
+fix production: disk encryption key derivation using wrong algorithm,urgent
+security patch: update jwt library to fix signature bypass vulnerability,urgent
+hotfix: fix crash in PDF export when document contains embedded fonts,urgent
+critical: disable feature flag causing 500 errors for 20% of users,urgent
+hotfix: fix broken password reset email links expiring immediately,urgent
+feat: add user authentication with OAuth2 and JWT tokens,normal
+fix: correct email validation regex rejecting valid addresses,normal
+add: implement rate limiting middleware for public API endpoints,normal
+update: bump numpy from 1.24 to 2.0 for performance improvements,normal
+implement: add pagination support to /api/users endpoint,normal
+fix: resolve 404 error when accessing nested resource routes,normal
+add search functionality to product listing page with filters,normal
+fix: correct timezone handling in event scheduling service,normal
+implement: webhook delivery retry logic with exponential backoff,normal
+fix: resolve memory usage regression introduced in v3.2.1,normal
+add: support for multiple file uploads in attachment API,normal
+fix: correct sorting order in leaderboard query,normal
+feat: implement dark mode toggle with system preference detection,normal
+fix: handle edge case when user has no billing address set,normal
+add: GraphQL subscription for real-time notification delivery,normal
+fix: resolve stale cache issue after profile picture update,normal
+implement: CSV export for analytics dashboard reports,normal
+fix: correct currency conversion rounding error in invoice totals,normal
+add: support for markdown rendering in comment fields,normal
+fix: resolve broken redirect after successful password change,normal
+feat: add bulk delete operation for admin user management,normal
+fix: correct broken link in password reset email template,normal
+implement: two-factor authentication using TOTP,normal
+fix: resolve connection timeout when fetching large datasets,normal
+add: support for webhook event filtering by resource type,normal
+fix: handle null response from third-party analytics API gracefully,normal
+feat: implement project archiving with data retention policy,normal
+fix: correct broken image URLs after S3 bucket migration,normal
+add: audit log for sensitive admin operations,normal
+fix: resolve login redirect loop when session expires mid-flow,normal
+implement: real-time collaboration cursor tracking in document editor,normal
+fix: correct broken CSV import when file contains BOM character,normal
+add: configurable idle session timeout for enterprise accounts,normal
+fix: resolve incorrect permission check on shared workspace resources,normal
+feat: add Slack integration for team notifications,normal
+fix: correct broken signup flow when referral code is invalid,normal
+implement: content delivery network integration for static assets,normal
+fix: handle duplicate key error gracefully during concurrent user creation,normal
+add: support for custom domain configuration in tenant settings,normal
+fix: resolve race condition in distributed lock acquisition,normal
+feat: add mobile push notifications for iOS and Android,normal
+fix: correct broken search indexing after schema migration,normal
+implement: automated database backup with 30-day retention,normal
+fix: resolve incorrect total calculation in shopping cart summary,normal
+add: support for SAML SSO integration in enterprise tier,normal
+fix: handle connection reset gracefully in long-polling endpoint,normal
+feat: add A/B testing framework for feature rollout experiments,normal
+fix: correct broken OAuth callback URL in staging environment,normal
+implement: request tracing with OpenTelemetry across services,normal
+fix: resolve broken image resize when source has incorrect EXIF orientation,normal
+add: configurable email digest frequency in notification settings,normal
+fix: correct off-by-one error in time slot availability checker,normal
+feat: implement predictive caching based on user access patterns,normal
+fix: handle missing translation key gracefully with fallback locale,normal
+add: support for custom fields in project management templates,normal
+fix: resolve deadlock between background worker and main thread,normal
+feat: add interactive onboarding tour for new users,normal
+fix: correct broken status badge rendering in Safari browser,normal
+implement: lazy loading for images in product gallery,normal
+fix: resolve incorrect calculation of storage usage for shared folders,normal
+add: support for keyboard shortcuts in code editor,normal
+fix: handle API version mismatch error with clear user message,normal
+feat: add data export in multiple formats including JSON and CSV,normal
+fix: correct broken anchor links in generated documentation,normal
+implement: content moderation queue for user-submitted images,normal
+fix: resolve broken drag-and-drop in Firefox,normal
+add: support for custom branding in white-label deployment,normal
+fix: handle empty state correctly in analytics charts,normal
+feat: add team activity feed with filtering options,normal
+fix: correct incorrect date format in European locale,normal
+implement: password strength meter in registration form,normal
+fix: resolve broken file preview for large PDFs,normal
+add: support for IP allowlist in enterprise security settings,normal
+fix: handle API rate limit exceeded error with retry-after header,normal
+feat: add comment threading and reply support,normal
+fix: correct broken export when dataset exceeds 10k rows,normal
+implement: automatic session renewal before token expiry,normal
+fix: resolve broken avatar upload when image is grayscale,normal
+add: support for configuring log retention period,normal
+fix: handle concurrent form submission preventing duplicate orders,normal
+feat: implement smart search with typo tolerance,normal
+fix: correct broken webhook payload signature for HMAC-SHA256,normal
+implement: multi-region data residency selection for compliance,normal
+fix: resolve broken table sorting when column contains null values,normal
+add: support for connecting multiple GitHub repositories,normal
+fix: handle large file uploads without browser timeout,normal
+feat: add scheduled report delivery via email,normal
+fix: correct broken permission inheritance in nested folders,normal
+implement: event-driven architecture for order processing pipeline,normal
+fix: resolve incorrect membership count on organization dashboard,normal
+add: configurable retention policy for audit log entries,normal
+fix: handle missing content-type header in webhook requests,normal
+docs: update README with installation instructions for Windows,deferrable
+chore: update pre-commit hooks to latest versions,deferrable
+style: fix inconsistent indentation in auth module,deferrable
+refactor: extract database query helpers into separate utility module,deferrable
+docs: add API reference documentation for user endpoints,deferrable
+chore: remove deprecated payment gateway adapter,deferrable
+style: apply Black formatter to entire codebase,deferrable
+refactor: simplify error handling in webhook processor,deferrable
+docs: update CONTRIBUTING guide with new branch naming convention,deferrable
+chore: upgrade development dependencies to resolve npm audit warnings,deferrable
+style: enforce consistent trailing commas in TypeScript files,deferrable
+refactor: rename internal config variables to match naming convention,deferrable
+docs: add architecture diagram to wiki,deferrable
+chore: clean up unused imports across all Python modules,deferrable
+style: convert tabs to spaces in legacy configuration files,deferrable
+refactor: move environment-specific constants to config module,deferrable
+docs: document database schema with ERD and field descriptions,deferrable
+chore: delete unused feature flags from configuration,deferrable
+style: alphabetize imports in all service files,deferrable
+refactor: replace raw SQL queries with ORM equivalents,deferrable
+docs: add inline docstrings to public API methods,deferrable
+chore: archive old sprint planning documents,deferrable
+style: fix line length violations flagged by linter,deferrable
+refactor: consolidate duplicate validation logic into shared validator,deferrable
+docs: translate user guide to French,deferrable
+wip: spike on potential GraphQL migration approach,deferrable
+chore: run database vacuum to reclaim storage space,deferrable
+style: standardize error message casing and punctuation,deferrable
+refactor: replace callback-based code with async/await,deferrable
+docs: add code of conduct to repository,deferrable
+chore: update copyright year in license headers,deferrable
+style: remove trailing whitespace from all files,deferrable
+refactor: extract payment provider abstraction layer,deferrable
+docs: add changelog entries for v2.4 release,deferrable
+chore: clean up test fixtures after migration to pytest,deferrable
+style: use consistent quote style in JavaScript files,deferrable
+refactor: split monolithic user service into domain-specific modules,deferrable
+docs: document environment variables in .env.example,deferrable
+chore: remove dead code identified by coverage report,deferrable
+style: update ESLint config to enforce modern JS patterns,deferrable
+refactor: improve log message clarity across payment service,deferrable
+docs: add runbook for common operational procedures,deferrable
+chore: rotate test API keys used in CI environment,deferrable
+style: normalize whitespace in SQL migration files,deferrable
+refactor: convert string concatenation to f-strings throughout codebase,deferrable
+docs: update deployment guide for Kubernetes setup,deferrable
+chore: archive old analytics event schemas,deferrable
+style: apply consistent naming convention to CSS classes,deferrable
+refactor: reduce cognitive complexity in order state machine,deferrable
+docs: add example requests to Postman collection,deferrable
+chore: prune stale git branches merged more than 6 months ago,deferrable
+style: enforce import ordering with isort,deferrable
+refactor: extract shared test helpers into conftest.py,deferrable
+docs: improve error message descriptions in API documentation,deferrable
+chore: update Docker base images to latest patch releases,deferrable
+style: convert double-quoted strings to single quotes in Ruby files,deferrable
+refactor: replace magic numbers with named constants,deferrable
+docs: write tutorial for setting up local development environment,deferrable
+chore: disable noisy log lines in test output,deferrable
+style: fix indentation in HTML templates,deferrable
+refactor: decouple notification sender from business logic,deferrable
+docs: add FAQ section to help center,deferrable
+chore: migrate CI configuration from CircleCI to GitHub Actions,deferrable
+style: wrap long lines in SQL queries for readability,deferrable
+refactor: use dataclasses instead of plain dicts for internal models,deferrable
+docs: update screenshots in user guide after UI redesign,deferrable
+chore: consolidate duplicate test data fixtures,deferrable
+style: apply consistent spacing around operators,deferrable
+refactor: move hardcoded timeout values to configuration,deferrable
+docs: add migration guide for users upgrading from v1 to v2,deferrable
+chore: delete temporary debug logging added during incident,deferrable
+style: apply Prettier formatting to all Markdown files,deferrable
+refactor: extract analytics event tracking into dedicated module,deferrable
+docs: document rate limiting policy in developer portal,deferrable
+chore: remove legacy feature flag evaluation code,deferrable
+style: normalise line endings to LF across the repository,deferrable
+refactor: replace custom retry logic with tenacity library,deferrable
+docs: add glossary of domain terms to onboarding guide,deferrable
+chore: update node version in .nvmrc to LTS,deferrable
+style: fix typo in variable name `recieve` → `receive`,deferrable
+refactor: simplify conditional chains in billing calculator,deferrable
+docs: add sequence diagrams for OAuth2 authentication flow,deferrable
+chore: enable dependabot for automated dependency updates,deferrable
+style: enforce consistent spacing in method signatures,deferrable
+refactor: introduce repository pattern for data access layer,deferrable
+docs: update API versioning policy documentation,deferrable
+chore: clean up orphaned database records from failed migrations,deferrable
+style: reorganize imports to group stdlib third-party and local modules,deferrable
+refactor: reduce code duplication in report generation module,deferrable
+docs: add contributing examples for common contribution types,deferrable
+chore: update infrastructure diagrams after cloud migration,deferrable
+style: apply consistent brace placement in Go files,deferrable
+refactor: replace deprecated API calls with current equivalents,deferrable
+docs: write release notes for upcoming v3.0 launch,deferrable
+chore: standardize Makefile targets across all services,deferrable
+style: fix spelling errors in code comments,deferrable
+refactor: move email template rendering to dedicated service,deferrable
+docs: add architecture decision records for major design choices,deferrable
+chore: compress and archive log files older than 90 days,deferrable
+style: remove commented-out code blocks from auth module,deferrable
+refactor: apply single responsibility principle to user controller,deferrable
+docs: document webhook event payload schemas,deferrable
+chore: migrate secrets from .env files to vault,deferrable
+style: ensure all functions have return type annotations,deferrable
+refactor: extract complex regex patterns into named constants,deferrable
+docs: add troubleshooting guide for common setup issues,deferrable
+chore: remove unused Docker volumes from compose file,deferrable
+style: enforce maximum function length of 50 lines via linter,deferrable
+refactor: replace nested callbacks with promise chain in legacy code,deferrable
+docs: add inline examples to configuration reference,deferrable
+chore: update staging environment to match production configuration,deferrable
+style: fix inconsistent spacing in CSS custom properties,deferrable
+refactor: consolidate feature toggle checks into single middleware,deferrable
+docs: document data retention and deletion procedures,deferrable
