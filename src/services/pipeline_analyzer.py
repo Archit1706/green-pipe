@@ -6,7 +6,7 @@ Coordinates GSF-based analysis across all modules:
   2. Estimate energy (GSF Impact Framework — Teads curve + SPECpower)
   3. Get carbon intensity (GSF Carbon Aware SDK)
   4. Calculate SCI (ISO/IEC 21031:2024)
-  5. Classify urgency (NLP — stub in Week 2, replaced in Week 3)
+  5. Classify urgency (DistilBERT NLP model, keyword fallback when model absent)
   6. Determine scheduling recommendation
   7. Return a structured analysis report
 
@@ -17,13 +17,13 @@ and (later) the GitLab Duo Agent trigger handler.
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 from src.calculators.sci_calculator import SCICalculator, SCIResult
 from src.estimators.energy_estimator import EnergyEstimate, GSFEnergyEstimator
+from src.nlp.classifier import classify_urgency
 from src.services.carbon_service import CarbonService
 from src.services.gitlab_client import CommitData, GitLabClient, JobData, PipelineData
 
@@ -117,38 +117,6 @@ class PipelineAnalysisReport:
             self.carbon_intensity_gco2_kwh - self.scheduling_window.intensity_gco2_kwh
         )
         return max(0.0, self.total_energy_kwh * delta_intensity)
-
-
-# ---------------------------------------------------------------------------
-# Urgency keyword classifier (stub — replaced by DistilBERT in Week 3)
-# ---------------------------------------------------------------------------
-
-_URGENT_KEYWORDS = frozenset(
-    {"hotfix", "critical", "security", "emergency", "urgent", "incident", "fix!"}
-)
-_DEFERRABLE_KEYWORDS = frozenset(
-    {"docs", "readme", "chore", "refactor", "style", "lint", "typo", "cleanup", "wip"}
-)
-
-
-def _keyword_classify(commit_messages: list[str]) -> tuple[str, float, str]:
-    """
-    Simple keyword-based urgency classifier.
-
-    Returns (urgency_class, confidence, source).
-    """
-    if not commit_messages:
-        return "normal", 0.5, "default"
-
-    text = " ".join(commit_messages).lower()
-    # Strip punctuation so 'hotfix:' matches 'hotfix'
-    tokens = set(re.split(r"[\s\W]+", text))
-
-    if _URGENT_KEYWORDS & tokens:
-        return "urgent", 0.80, "keyword"
-    if _DEFERRABLE_KEYWORDS & tokens:
-        return "deferrable", 0.75, "keyword"
-    return "normal", 0.65, "keyword"
 
 
 # ---------------------------------------------------------------------------
@@ -282,10 +250,11 @@ class PipelineAnalyzer:
             functional_unit="pipeline_run",
         )
 
-        # 5. Urgency classification (keyword stub — NLP replaces in Week 3)
-        urgency_class, urgency_confidence, urgency_source = _keyword_classify(
-            commit_messages
-        )
+        # 5. Urgency classification (DistilBERT NLP; keyword fallback if model absent)
+        nlp_result = classify_urgency(commit_messages)
+        urgency_class = nlp_result.urgency_class
+        urgency_confidence = nlp_result.confidence
+        urgency_source = nlp_result.source
 
         # 6. Scheduling recommendation
         can_defer = urgency_class == "deferrable"
