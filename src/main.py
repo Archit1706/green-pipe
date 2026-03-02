@@ -6,6 +6,18 @@ Built on Green Software Foundation Standards:
 - GSF Carbon Aware SDK
 - GSF Impact Framework (Teads curve)
 - ECO-CI SPECpower approach
+
+Security notes (pre-production checklist):
+- TODO: Replace CORS wildcard (allow_origins=["*"]) with the specific origin(s)
+  of your GitLab instance / frontend before any public deployment.
+- TODO: Add authentication middleware (e.g. HTTP Bearer token checked against
+  a shared secret in GITLAB_WEBHOOK_SECRET, or OAuth2 scopes from GitLab).
+  All /api/v1/ endpoints are currently unauthenticated.
+- TODO: Add rate-limiting middleware (e.g. slowapi) to prevent abuse of the
+  /pipeline/analyze endpoint which performs NLP inference per request.
+- TODO: Enable HTTPS termination at the reverse-proxy / platform layer
+  (Railway, Render, Nginx) so that the GitLab token and pipeline data are
+  always transmitted over TLS.
 """
 
 from __future__ import annotations
@@ -39,11 +51,14 @@ app = FastAPI(
     license_info={"name": "MIT"},
 )
 
+# TODO (production): restrict allow_origins to your GitLab instance hostname
+# and any trusted frontend domain.  The wildcard below is acceptable only
+# during local development / hackathon demos.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],  # FIXME: tighten before production deployment
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 app.include_router(router)
