@@ -23,10 +23,13 @@ Security notes (pre-production checklist):
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.agent_routes import agent_tools_router, webhook_router
 from src.api.routes import router
 from src.config import settings
 from src.database import create_tables
@@ -37,7 +40,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(fastapi_app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
+    """Application lifespan: startup → yield → shutdown."""
+    logger.info("GreenPipe starting up (env=%s)", settings.app_env)
+    if settings.app_env == "development":
+        try:
+            await create_tables()
+            logger.info("Database tables ensured.")
+        except Exception as exc:
+            logger.warning("Could not create DB tables (no DB configured?): %s", exc)
+    yield
+    logger.info("GreenPipe shutting down.")
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="GreenPipe",
     description=(
         "GSF-Compliant Carbon-Aware CI/CD Agent for GitLab. "
@@ -62,19 +81,5 @@ app.add_middleware(
 )
 
 app.include_router(router)
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    logger.info("GreenPipe starting up (env=%s)", settings.app_env)
-    if settings.app_env == "development":
-        try:
-            await create_tables()
-            logger.info("Database tables ensured.")
-        except Exception as exc:
-            logger.warning("Could not create DB tables (no DB configured?): %s", exc)
-
-
-@app.on_event("shutdown")
-async def on_shutdown() -> None:
-    logger.info("GreenPipe shutting down.")
+app.include_router(agent_tools_router)
+app.include_router(webhook_router)

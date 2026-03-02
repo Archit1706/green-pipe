@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     # GitLab
     gitlab_url: str = "https://gitlab.com"
     gitlab_token: str = ""
+    # Secret token configured on the GitLab webhook (Settings → Webhooks → Secret token).
+    # When set, every incoming webhook request must include the matching
+    # X-Gitlab-Token header, rejecting forged/replayed events.
+    gitlab_webhook_secret: str = ""
 
     # Database
     database_url: str = "postgresql://user:password@localhost:5432/greenpipe"
