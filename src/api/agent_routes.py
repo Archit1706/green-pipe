@@ -22,8 +22,10 @@ Security:
 
 from __future__ import annotations
 
+import fnmatch
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, status
@@ -34,6 +36,7 @@ from src.api.agent_schemas import (
     AnalyzePipelineOutput,
     ClassifyUrgencyInput,
     ClassifyUrgencyOutput,
+    DeferralDecision,
     GenerateSCIReportInput,
     GenerateSCIReportOutput,
     GitLabNoteEvent,
@@ -41,11 +44,15 @@ from src.api.agent_schemas import (
     SuggestSchedulingInput,
     SuggestSchedulingOutput,
 )
-from src.api.report_formatter import format_help_comment, format_mr_comment
+from src.api.report_formatter import (
+    format_deferral_comment,
+    format_help_comment,
+    format_mr_comment,
+)
 from src.config import settings
 from src.nlp.classifier import classify_urgency
 from src.services.carbon_service import CarbonService
-from src.services.pipeline_analyzer import PipelineAnalyzer
+from src.services.pipeline_analyzer import PipelineAnalyzer, PipelineAnalysisReport
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +102,184 @@ def _build_markdown_summary(report: Any) -> str:
         f"({report.urgency_confidence:.0%} confidence). "
         f"{defer_text}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Auto-deferral engine
+# ---------------------------------------------------------------------------
+
+_VALID_DEFER_MODES = {"recommend-only", "approval-required", "auto-execute"}
+
+
+def _is_protected_ref(ref: str) -> bool:
+    """
+    Check if a branch/tag ref matches any pattern in GREENPIPE_PROTECTED_BRANCHES.
+
+    Supports trailing ``*`` glob (e.g. ``release*`` matches ``release/1.0``).
+    """
+    patterns = [
+        p.strip()
+        for p in settings.greenpipe_protected_branches.split(",")
+        if p.strip()
+    ]
+    for pattern in patterns:
+        if fnmatch.fnmatch(ref, pattern):
+            return True
+    return False
+
+
+def _datetime_to_cron(dt: datetime) -> str:
+    """Convert a datetime to a cron expression ``M H * * *``."""
+    return f"{dt.minute} {dt.hour} * * *"
+
+
+def _parse_iso_window(ts: str | None) -> datetime | None:
+    """Best-effort parse of a scheduling window timestamp string."""
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, AttributeError):
+        return None
+
+
+async def _evaluate_deferral(
+    report: PipelineAnalysisReport,
+    pipeline_id: int,
+    project_id: int,
+    ref: str,
+) -> DeferralDecision:
+    """
+    Core deferral decision engine.
+
+    Evaluates whether a pipeline should be deferred based on:
+    - Urgency classification
+    - Carbon savings vs. policy threshold
+    - Protected branch/environment list
+    - Active deferral mode
+
+    Returns a ``DeferralDecision`` describing the action taken (or recommended).
+    This function **never raises**; errors are captured in the decision reason.
+    """
+    mode = settings.greenpipe_defer_mode
+    if mode not in _VALID_DEFER_MODES:
+        mode = "recommend-only"
+
+    base = DeferralDecision(
+        action="none",
+        policy_mode=mode,
+        reason="",
+    )
+
+    # Gate: only deferrable pipelines are candidates
+    if not report.can_defer:
+        base.action = "none"
+        base.reason = (
+            f"Pipeline urgency is '{report.urgency_class}' — not a deferral candidate."
+        )
+        return base
+
+    # Gate: protected branches
+    if ref and _is_protected_ref(ref):
+        base.action = "none"
+        base.reason = f"Branch '{ref}' is protected — deferral blocked by policy."
+        return base
+
+    # Gate: need a scheduling window with sufficient savings
+    window = report.scheduling_window
+    if window is None:
+        base.action = "none"
+        base.reason = "No lower-carbon window found in forecast — deferral not beneficial."
+        return base
+
+    savings = window.savings_percent
+    min_savings = settings.greenpipe_min_savings_pct
+    if savings < min_savings:
+        base.action = "none"
+        base.reason = (
+            f"Predicted savings ({savings:.1f}%) below policy threshold "
+            f"({min_savings:.1f}%) — deferral not triggered."
+        )
+        return base
+
+    # Populate carbon context
+    base.original_intensity_gco2_kwh = round(report.carbon_intensity_gco2_kwh, 2)
+    base.target_intensity_gco2_kwh = round(window.intensity_gco2_kwh, 2)
+    base.target_window = window.timestamp
+    base.predicted_savings_pct = round(savings, 1)
+
+    # --- recommend-only: advise but take no action ---
+    if mode == "recommend-only":
+        base.action = "recommended"
+        base.reason = (
+            f"Deferral recommended: {savings:.1f}% carbon savings available "
+            f"at {window.timestamp}. Set GREENPIPE_DEFER_MODE=auto-execute to "
+            f"enable automatic deferral."
+        )
+        return base
+
+    # --- approval-required: post prompt, wait for @greenpipe confirm-defer ---
+    if mode == "approval-required":
+        base.action = "awaiting_approval"
+        base.reason = (
+            f"Deferral pending approval: {savings:.1f}% carbon savings at "
+            f"{window.timestamp}. Reply `@greenpipe confirm-defer` to approve "
+            f"or `@greenpipe run-now` to skip."
+        )
+        return base
+
+    # --- auto-execute: cancel pipeline + create schedule ---
+    target_dt = _parse_iso_window(window.timestamp)
+    if target_dt is None:
+        base.action = "recommended"
+        base.reason = (
+            f"Deferral recommended but could not parse target window timestamp "
+            f"'{window.timestamp}' — manual action required."
+        )
+        return base
+
+    # Check max delay policy
+    now = datetime.now(timezone.utc)
+    delay_hours = (target_dt - now).total_seconds() / 3600
+    if delay_hours > settings.greenpipe_max_delay_hours:
+        base.action = "recommended"
+        base.reason = (
+            f"Best window is {delay_hours:.1f}h away, exceeding max delay of "
+            f"{settings.greenpipe_max_delay_hours}h — recommending only."
+        )
+        return base
+
+    # Execute: cancel + schedule
+    cron = _datetime_to_cron(target_dt)
+    cancelled = False
+    schedule_id: int | None = None
+
+    if _analyzer._gitlab is not None:
+        cancelled = _analyzer._gitlab.cancel_pipeline(project_id, pipeline_id)
+        schedule_id = _analyzer._gitlab.create_pipeline_schedule(
+            project_id=project_id,
+            ref=ref,
+            cron=cron,
+            description=(
+                f"GreenPipe auto-deferred: {savings:.0f}% carbon savings "
+                f"({report.carbon_intensity_gco2_kwh:.0f} → "
+                f"{window.intensity_gco2_kwh:.0f} gCO₂e/kWh)"
+            ),
+        )
+
+    base.action = "deferred"
+    base.pipeline_cancelled = cancelled
+    base.schedule_id = schedule_id
+    base.schedule_cron = cron
+    base.reason = (
+        f"Pipeline auto-deferred: cancelled pipeline {pipeline_id} and "
+        f"scheduled re-run at {window.timestamp} (cron: {cron}). "
+        f"Predicted carbon savings: {savings:.1f}%."
+    )
+    return base
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +580,19 @@ async def webhook_pipeline_event(
             message=f"Analysis failed: {exc}",
         )
 
-    markdown = format_mr_comment(report)
+    # --- Evaluate deferral decision ---
+    ref = event.ref or ""
+    deferral = await _evaluate_deferral(report, pipeline_id, project_id, ref)
+    logger.info(
+        "Deferral decision for pipeline %s: action=%s reason=%s",
+        pipeline_id, deferral.action, deferral.reason,
+    )
+
+    # Build the MR comment — include deferral info when relevant
+    if deferral.action in ("deferred", "awaiting_approval", "recommended"):
+        markdown = format_mr_comment(report) + "\n\n" + format_deferral_comment(deferral)
+    else:
+        markdown = format_mr_comment(report)
 
     # Find and comment on the associated MR
     mr_iid = None
@@ -427,6 +624,7 @@ async def webhook_pipeline_event(
             "mr_iid": mr_iid,
             "comment_posted": comment_posted,
         },
+        deferral=deferral,
     )
 
 
@@ -443,10 +641,14 @@ async def webhook_mention_event(
     Receive a GitLab note event triggered by an @greenpipe mention.
 
     Supported commands (case-insensitive, anywhere in the comment):
-      @greenpipe analyze   — analyse the latest pipeline for this MR
-      @greenpipe report    — same as analyze, full SCI report
-      @greenpipe schedule  — show carbon-optimal execution windows
-      @greenpipe help      — list available commands
+      @greenpipe analyze        — analyse the latest pipeline for this MR
+      @greenpipe report         — same as analyze, full SCI report
+      @greenpipe schedule       — show carbon-optimal execution windows
+      @greenpipe run-now        — override deferral and run the pipeline immediately
+      @greenpipe confirm-defer  — approve a pending deferral
+      @greenpipe defer          — manually request deferral to best window
+      @greenpipe why            — explain the last urgency classification
+      @greenpipe help           — list available commands
 
     Configure this URL in GitLab → Settings → Webhooks with the
     "Comments" trigger restricted to merge request notes.
@@ -568,6 +770,167 @@ async def webhook_mention_event(
             details={"command": "schedule"},
         )
 
+    if command == "run-now":
+        # Override: retry the pipeline immediately regardless of deferral
+        pipeline_id = _latest_pipeline_for_mr(event)
+        if pipeline_id and _analyzer._gitlab:
+            new_id = _analyzer._gitlab.retry_pipeline(project_id, pipeline_id)
+            if new_id:
+                reply = (
+                    f"> ▶️ **GreenPipe:** Deferral overridden. "
+                    f"Pipeline re-triggered (new pipeline: #{new_id})."
+                )
+            else:
+                reply = (
+                    f"> ▶️ **GreenPipe:** Override requested but could not retry "
+                    f"pipeline {pipeline_id}. Please re-run manually."
+                )
+        else:
+            reply = (
+                "> ⚠️ **GreenPipe:** Cannot run-now — "
+                "no pipeline found or GitLab client not configured."
+            )
+        _post_reply(project_id, mr_iid, reply)
+        return AgentWebhookResponse(
+            status="accepted",
+            message="run-now override processed.",
+            details={"command": "run-now"},
+        )
+
+    if command == "confirm-defer":
+        # Approve a pending deferral — schedule the pipeline to the best window
+        pipeline_id = _latest_pipeline_for_mr(event)
+        ref = ""
+        if event.merge_request:
+            ref = event.merge_request.get("source_branch", "")
+        try:
+            window = await _carbon_service.find_best_execution_window(
+                location="us-east1",
+            )
+            if window and pipeline_id and ref and _analyzer._gitlab:
+                target_dt = _parse_iso_window(window.get("timestamp"))
+                cron = _datetime_to_cron(target_dt) if target_dt else "0 3 * * *"
+                _analyzer._gitlab.cancel_pipeline(project_id, pipeline_id)
+                schedule_id = _analyzer._gitlab.create_pipeline_schedule(
+                    project_id=project_id,
+                    ref=ref,
+                    cron=cron,
+                    description="GreenPipe deferred (user-approved)",
+                )
+                reply = (
+                    f"> ✅ **GreenPipe:** Deferral confirmed. Pipeline cancelled and "
+                    f"rescheduled to `{window.get('timestamp', 'TBD')}` "
+                    f"(schedule #{schedule_id})."
+                )
+            else:
+                reply = (
+                    "> ⚠️ **GreenPipe:** Could not confirm deferral — "
+                    "no forecast window or missing pipeline context."
+                )
+        except Exception as exc:
+            logger.warning("confirm-defer failed: %s", exc)
+            reply = f"> ❌ **GreenPipe:** Deferral confirmation failed: {exc}"
+        _post_reply(project_id, mr_iid, reply)
+        return AgentWebhookResponse(
+            status="accepted",
+            message="confirm-defer processed.",
+            details={"command": "confirm-defer"},
+        )
+
+    if command == "defer":
+        # Manual deferral request — find the best window and schedule
+        pipeline_id = _latest_pipeline_for_mr(event)
+        ref = ""
+        if event.merge_request:
+            ref = event.merge_request.get("source_branch", "")
+        try:
+            window = await _carbon_service.find_best_execution_window(
+                location="us-east1",
+            )
+            if window and pipeline_id and ref and _analyzer._gitlab:
+                target_dt = _parse_iso_window(window.get("timestamp"))
+                cron = _datetime_to_cron(target_dt) if target_dt else "0 3 * * *"
+                _analyzer._gitlab.cancel_pipeline(project_id, pipeline_id)
+                schedule_id = _analyzer._gitlab.create_pipeline_schedule(
+                    project_id=project_id,
+                    ref=ref,
+                    cron=cron,
+                    description="GreenPipe deferred (user-requested)",
+                )
+                reply = (
+                    f"> ⏸️ **GreenPipe:** Pipeline deferred. Cancelled pipeline "
+                    f"#{pipeline_id} and scheduled re-run at "
+                    f"`{window.get('timestamp', 'TBD')}` "
+                    f"({window['intensity_gco2_kwh']:.1f} gCO₂e/kWh). "
+                    f"Override with `@greenpipe run-now`."
+                )
+            elif not window:
+                reply = (
+                    "> ⚠️ **GreenPipe:** No lower-carbon window found — "
+                    "pipeline should run now."
+                )
+            else:
+                reply = (
+                    "> ⚠️ **GreenPipe:** Cannot defer — "
+                    "no pipeline found or GitLab client not configured."
+                )
+        except Exception as exc:
+            logger.warning("defer command failed: %s", exc)
+            reply = f"> ❌ **GreenPipe:** Deferral failed: {exc}"
+        _post_reply(project_id, mr_iid, reply)
+        return AgentWebhookResponse(
+            status="accepted",
+            message="defer processed.",
+            details={"command": "defer"},
+        )
+
+    if command == "why":
+        # Explain the urgency classification for the latest pipeline
+        pipeline_id = _latest_pipeline_for_mr(event)
+        if pipeline_id and _analyzer._gitlab:
+            try:
+                commits = _analyzer._gitlab.get_pipeline_commits(
+                    project_id, pipeline_id
+                )
+                messages = [c.message for c in commits]
+            except Exception:
+                messages = []
+        else:
+            messages = []
+
+        result = classify_urgency(messages)
+        _explanations = {
+            "urgent": (
+                "urgency signals detected (hotfix, critical, security, CVE). "
+                "Pipeline must run immediately."
+            ),
+            "normal": (
+                "no strong urgency or deferral signals. "
+                "Pipeline runs on its normal schedule."
+            ),
+            "deferrable": (
+                "low-urgency signals detected (docs, refactor, style, chore). "
+                "Pipeline is a good candidate for carbon-aware scheduling."
+            ),
+        }
+        keywords = ", ".join(f"`{m[:60]}`" for m in messages[:3]) or "*(no messages)*"
+        reply = (
+            f"> 🔍 **GreenPipe — Classification Explanation**\n>\n"
+            f"> **Urgency:** `{result.urgency_class}` "
+            f"(confidence: {result.confidence:.0%})\n"
+            f"> **Source:** `{result.source}` classifier\n"
+            f"> **Reason:** {_explanations.get(result.urgency_class, 'unknown')}\n"
+            f"> **Commit messages analysed:** {keywords}\n>\n"
+            f"> Override: use `@greenpipe run-now` to force immediate execution "
+            f"or `@greenpipe defer` to request deferral."
+        )
+        _post_reply(project_id, mr_iid, reply)
+        return AgentWebhookResponse(
+            status="accepted",
+            message="Classification explanation posted.",
+            details={"command": "why", "urgency_class": result.urgency_class},
+        )
+
     # Unknown command — post help
     reply = (
         "> ❓ **GreenPipe:** Unknown command. "
@@ -587,7 +950,7 @@ async def webhook_mention_event(
 # ---------------------------------------------------------------------------
 
 _COMMAND_RE = re.compile(
-    r"@greenpipe\s+(analyze|report|schedule|help)",
+    r"@greenpipe\s+(analyze|report|schedule|run-now|confirm-defer|defer|why|help)",
     re.IGNORECASE,
 )
 
