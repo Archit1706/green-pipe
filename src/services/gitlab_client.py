@@ -296,6 +296,102 @@ class GitLabClient:
             logger.error("Failed to post MR comment: %s", exc)
             return False
 
+    def cancel_pipeline(self, project_id: int, pipeline_id: int) -> bool:
+        """
+        Cancel a running GitLab pipeline.
+
+        Returns True on success, False on failure.
+        """
+        try:
+            project = self._gl.projects.get(project_id)
+            pipeline = project.pipelines.get(pipeline_id)
+            pipeline.cancel()
+            logger.info(
+                "Cancelled pipeline %s on project %s", pipeline_id, project_id
+            )
+            return True
+        except GitlabError as exc:
+            logger.error("Failed to cancel pipeline %s: %s", pipeline_id, exc)
+            return False
+
+    def retry_pipeline(self, project_id: int, pipeline_id: int) -> int | None:
+        """
+        Retry (re-run) a pipeline.  Returns the new pipeline ID or None on failure.
+        """
+        try:
+            project = self._gl.projects.get(project_id)
+            pipeline = project.pipelines.get(pipeline_id)
+            new_pipeline = pipeline.retry()
+            new_id = getattr(new_pipeline, "id", None)
+            logger.info(
+                "Retried pipeline %s → new pipeline %s on project %s",
+                pipeline_id, new_id, project_id,
+            )
+            return new_id
+        except GitlabError as exc:
+            logger.error("Failed to retry pipeline %s: %s", pipeline_id, exc)
+            return None
+
+    def create_pipeline_schedule(
+        self,
+        project_id: int,
+        ref: str,
+        cron: str,
+        description: str = "GreenPipe auto-deferred pipeline",
+        active: bool = True,
+    ) -> int | None:
+        """
+        Create a one-shot pipeline schedule.
+
+        Args:
+            project_id: GitLab project ID
+            ref: Branch/tag ref to schedule (e.g. ``feature/my-branch``)
+            cron: Cron expression for the schedule (e.g. ``0 3 * * *``)
+            description: Human-readable description
+            active: Whether the schedule is active
+
+        Returns the schedule ID on success, None on failure.
+        """
+        try:
+            project = self._gl.projects.get(project_id)
+            schedule = project.pipelineschedules.create({
+                "ref": ref,
+                "cron": cron,
+                "description": description,
+                "active": active,
+            })
+            schedule_id = getattr(schedule, "id", None)
+            logger.info(
+                "Created pipeline schedule %s (cron=%s ref=%s) on project %s",
+                schedule_id, cron, ref, project_id,
+            )
+            return schedule_id
+        except GitlabError as exc:
+            logger.error(
+                "Failed to create pipeline schedule on project %s: %s",
+                project_id, exc,
+            )
+            return None
+
+    def get_mr_diff(self, project_id: int, mr_iid: int) -> str | None:
+        """
+        Fetch the diff text for a merge request.
+
+        Returns the combined diff as a string, or None on failure.
+        """
+        try:
+            project = self._gl.projects.get(project_id)
+            mr = project.mergerequests.get(mr_iid)
+            changes = mr.changes()
+            diffs: list[str] = []
+            for change in changes.get("changes", []):
+                header = f"--- a/{change.get('old_path', '')}\n+++ b/{change.get('new_path', '')}"
+                diffs.append(f"{header}\n{change.get('diff', '')}")
+            return "\n".join(diffs) if diffs else None
+        except GitlabError as exc:
+            logger.warning("Could not fetch MR diff for !%s: %s", mr_iid, exc)
+            return None
+
     def find_mr_for_pipeline(
         self, project_id: int, pipeline_id: int
     ) -> int | None:
