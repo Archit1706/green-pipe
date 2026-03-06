@@ -135,6 +135,48 @@ class ClassifyUrgencyOutput(BaseModel):
     explanation: str
 
 
+class AnalyzeCodeEfficiencyInput(BaseModel):
+    """Input for the analyze_code_efficiency agent tool."""
+
+    project_id: int | None = Field(
+        default=None,
+        description="GitLab project ID. When provided with mr_iid, the diff is "
+                    "fetched automatically from GitLab.",
+    )
+    mr_iid: int | None = Field(
+        default=None,
+        description="Merge request IID. Used with project_id to fetch the diff.",
+    )
+    diff_text: str | None = Field(
+        default=None,
+        description="Raw diff text to analyse. Use this instead of project_id/mr_iid "
+                    "for offline or manual analysis.",
+    )
+
+
+class CodeEfficiencySuggestion(BaseModel):
+    """A single code efficiency suggestion from Claude."""
+
+    file: str = Field(description="File path from the diff")
+    line_range: str = Field(description="Affected line range (e.g. '47-53')")
+    issue_type: str = Field(description="Category: n_plus_one_query, missing_cache, unbounded_loop, etc.")
+    description: str = Field(description="Human-readable description of the inefficiency")
+    estimated_energy_impact: str = Field(description="low | medium | high")
+    suggested_fix: str = Field(description="Actionable fix suggestion")
+
+
+class AnalyzeCodeEfficiencyOutput(BaseModel):
+    """Output of the analyze_code_efficiency agent tool."""
+
+    suggestions: list[CodeEfficiencySuggestion] = Field(default_factory=list)
+    overall_assessment: str = ""
+    estimated_energy_reduction: str = ""
+    model_used: str = ""
+    tokens_used: int = 0
+    error: str | None = None
+    diff_source: str = ""  # "gitlab_mr" | "manual" | "unavailable"
+
+
 # ---------------------------------------------------------------------------
 # GitLab webhook payload schemas
 # ---------------------------------------------------------------------------
