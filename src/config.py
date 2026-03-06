@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     watttime_user: str = ""
     watttime_password: str = ""
 
+    # Anthropic Claude API (for code efficiency analysis)
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-6"
+
     # Auto-deferral policy
     # Mode: "recommend-only" | "approval-required" | "auto-execute"
     greenpipe_defer_mode: str = "recommend-only"
