@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -153,4 +154,54 @@ class GSFComplianceLog(Base):
         return (
             f"<GSFComplianceLog standard={self.standard_name} "
             f"status={self.compliance_status}>"
+        )
+
+
+class DeferralAuditRecord(Base):
+    """
+    Audit log for every auto-deferral decision.
+
+    Records the original carbon intensity, the target low-carbon window,
+    predicted savings, urgency class, policy mode, and final action taken.
+    Provides reproducible decision logic for judging and compliance.
+    """
+
+    __tablename__ = "deferral_audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    gitlab_pipeline_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    project_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    ref: Mapped[str | None] = mapped_column(String(255))
+
+    # Carbon context
+    original_intensity_gco2_kwh: Mapped[float | None] = mapped_column(Numeric(10, 4))
+    target_intensity_gco2_kwh: Mapped[float | None] = mapped_column(Numeric(10, 4))
+    target_window: Mapped[str | None] = mapped_column(String(100))
+    predicted_savings_pct: Mapped[float | None] = mapped_column(Numeric(6, 2))
+
+    # Classification
+    urgency_class: Mapped[str | None] = mapped_column(String(50))
+    urgency_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4))
+
+    # Policy
+    policy_mode: Mapped[str | None] = mapped_column(String(50))
+    # Action: "none" | "recommended" | "awaiting_approval" | "deferred" | "force_run"
+    action_taken: Mapped[str] = mapped_column(String(50), default="none")
+    action_reason: Mapped[str | None] = mapped_column(Text)
+
+    # Outcome
+    pipeline_cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
+    schedule_id: Mapped[int | None] = mapped_column(BigInteger)
+    schedule_cron: Mapped[str | None] = mapped_column(String(100))
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        default=_utcnow,
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<DeferralAuditRecord pipeline={self.gitlab_pipeline_id} "
+            f"action={self.action_taken}>"
         )
