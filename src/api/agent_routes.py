@@ -32,10 +32,13 @@ from fastapi import APIRouter, Header, HTTPException, status
 
 from src.api.agent_schemas import (
     AgentWebhookResponse,
+    AnalyzeCodeEfficiencyInput,
+    AnalyzeCodeEfficiencyOutput,
     AnalyzePipelineInput,
     AnalyzePipelineOutput,
     ClassifyUrgencyInput,
     ClassifyUrgencyOutput,
+    CodeEfficiencySuggestion,
     DeferralDecision,
     GenerateSCIReportInput,
     GenerateSCIReportOutput,
@@ -45,6 +48,7 @@ from src.api.agent_schemas import (
     SuggestSchedulingOutput,
 )
 from src.api.report_formatter import (
+    format_code_efficiency_comment,
     format_deferral_comment,
     format_help_comment,
     format_mr_comment,
@@ -52,6 +56,7 @@ from src.api.report_formatter import (
 from src.config import settings
 from src.nlp.classifier import classify_urgency
 from src.services.carbon_service import CarbonService
+from src.services.code_analyzer import CodeAnalyzer
 from src.services.pipeline_analyzer import PipelineAnalyzer, PipelineAnalysisReport
 
 logger = logging.getLogger(__name__)
@@ -62,6 +67,7 @@ logger = logging.getLogger(__name__)
 
 _carbon_service = CarbonService()
 _analyzer = PipelineAnalyzer(carbon_service=_carbon_service)
+_code_analyzer = CodeAnalyzer()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -505,6 +511,76 @@ async def tool_classify_urgency(
     )
 
 
+@agent_tools_router.post(
+    "/analyze_code_efficiency",
+    response_model=AnalyzeCodeEfficiencyOutput,
+    summary="Analyse MR code for energy efficiency using Claude",
+)
+async def tool_analyze_code_efficiency(
+    body: AnalyzeCodeEfficiencyInput,
+) -> AnalyzeCodeEfficiencyOutput:
+    """
+    Send a merge request diff to Claude for green code profiling.
+
+    Identifies energy-inefficient patterns (N+1 queries, missing caching,
+    unbounded loops, sync I/O, over-computation) and returns structured
+    suggestions with estimated energy impact.
+
+    Provide **either** ``project_id`` + ``mr_iid`` to fetch the diff from
+    GitLab, **or** ``diff_text`` for offline / manual analysis.
+
+    Requires ``ANTHROPIC_API_KEY`` to be configured.
+    """
+    if not _code_analyzer.is_available:
+        return AnalyzeCodeEfficiencyOutput(
+            error="Code analyzer unavailable: ANTHROPIC_API_KEY not configured "
+                  "or anthropic package not installed.",
+            diff_source="unavailable",
+        )
+
+    diff_text = body.diff_text
+    diff_source = "manual"
+
+    # Fetch diff from GitLab if project_id + mr_iid provided
+    if not diff_text and body.project_id and body.mr_iid:
+        if _analyzer._gitlab is None:
+            return AnalyzeCodeEfficiencyOutput(
+                error="GitLab client not configured (GITLAB_TOKEN missing). "
+                      "Provide diff_text directly for offline analysis.",
+                diff_source="unavailable",
+            )
+        diff_text = _analyzer._gitlab.get_mr_diff(body.project_id, body.mr_iid)
+        diff_source = "gitlab_mr"
+
+    if not diff_text:
+        return AnalyzeCodeEfficiencyOutput(
+            error="No diff provided. Supply project_id + mr_iid or diff_text.",
+            diff_source="unavailable",
+        )
+
+    result = await _code_analyzer.analyze_diff(diff_text)
+
+    return AnalyzeCodeEfficiencyOutput(
+        suggestions=[
+            CodeEfficiencySuggestion(
+                file=s.file,
+                line_range=s.line_range,
+                issue_type=s.issue_type,
+                description=s.description,
+                estimated_energy_impact=s.estimated_energy_impact,
+                suggested_fix=s.suggested_fix,
+            )
+            for s in result.suggestions
+        ],
+        overall_assessment=result.overall_assessment,
+        estimated_energy_reduction=result.estimated_energy_reduction,
+        model_used=result.model_used,
+        tokens_used=result.tokens_used,
+        error=result.error,
+        diff_source=diff_source,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Webhook router
 # ---------------------------------------------------------------------------
@@ -884,6 +960,59 @@ async def webhook_mention_event(
             details={"command": "defer"},
         )
 
+    if command == "optimize":
+        # Green Code Profiler — analyse MR diff for energy efficiency
+        if not project_id or not mr_iid:
+            return AgentWebhookResponse(
+                status="error",
+                message="Cannot determine project_id or MR IID from event.",
+            )
+        if not _code_analyzer.is_available:
+            reply = (
+                "> ⚠️ **GreenPipe:** Code efficiency analysis unavailable — "
+                "`ANTHROPIC_API_KEY` not configured."
+            )
+            _post_reply(project_id, mr_iid, reply)
+            return AgentWebhookResponse(
+                status="skipped",
+                message="Code analyzer not configured.",
+            )
+        # Fetch diff
+        diff_text: str | None = None
+        if _analyzer._gitlab:
+            diff_text = _analyzer._gitlab.get_mr_diff(project_id, mr_iid)
+        if not diff_text:
+            reply = (
+                "> ⚠️ **GreenPipe:** Could not fetch diff for this MR. "
+                "Ensure GitLab token has API access."
+            )
+            _post_reply(project_id, mr_iid, reply)
+            return AgentWebhookResponse(
+                status="error",
+                message="Could not fetch MR diff.",
+            )
+        try:
+            result = await _code_analyzer.analyze_diff(diff_text)
+            reply = format_code_efficiency_comment(result)
+            _post_reply(project_id, mr_iid, reply)
+            return AgentWebhookResponse(
+                status="accepted",
+                message=f"Code efficiency analysis posted to MR !{mr_iid}.",
+                details={
+                    "command": "optimize",
+                    "suggestions_count": len(result.suggestions),
+                    "model_used": result.model_used,
+                },
+            )
+        except Exception as exc:
+            logger.error("optimize command failed: %s", exc, exc_info=True)
+            reply = f"> ❌ **GreenPipe error:** Code analysis failed: {exc}"
+            _post_reply(project_id, mr_iid, reply)
+            return AgentWebhookResponse(
+                status="error",
+                message=f"Code analysis failed: {exc}",
+            )
+
     if command == "why":
         # Explain the urgency classification for the latest pipeline
         pipeline_id = _latest_pipeline_for_mr(event)
@@ -950,7 +1079,7 @@ async def webhook_mention_event(
 # ---------------------------------------------------------------------------
 
 _COMMAND_RE = re.compile(
-    r"@greenpipe\s+(analyze|report|schedule|run-now|confirm-defer|defer|why|help)",
+    r"@greenpipe\s+(analyze|report|schedule|run-now|confirm-defer|defer|optimize|why|help)",
     re.IGNORECASE,
 )
 
