@@ -7,6 +7,7 @@ markdown comment that the agent posts after each pipeline analysis.
 
 from __future__ import annotations
 
+from src.api.agent_schemas import DeferralDecision
 from src.services.pipeline_analyzer import PipelineAnalysisReport
 
 # Urgency → emoji + short label
@@ -175,6 +176,61 @@ def format_mr_comment(report: PipelineAnalysisReport) -> str:
     return "\n".join(lines)
 
 
+def format_deferral_comment(deferral: DeferralDecision) -> str:
+    """
+    Return a markdown section describing the auto-deferral action or recommendation.
+
+    Appended to the main MR comment when deferral is relevant.
+    """
+    _ACTION_ICONS = {
+        "deferred": "⏸️",
+        "awaiting_approval": "⏳",
+        "recommended": "💡",
+    }
+    icon = _ACTION_ICONS.get(deferral.action, "ℹ️")
+    lines: list[str] = [
+        f"### {icon} Auto-Deferral Decision",
+        "",
+    ]
+
+    if deferral.action == "deferred":
+        lines += [
+            f"> **Pipeline auto-deferred.** Cancelled and rescheduled to "
+            f"`{deferral.target_window}` (cron: `{deferral.schedule_cron}`).",
+            ">",
+            f"> Predicted carbon savings: **{deferral.predicted_savings_pct:.1f}%** "
+            f"({deferral.original_intensity_gco2_kwh} → "
+            f"{deferral.target_intensity_gco2_kwh} gCO₂e/kWh).",
+            ">",
+            "> Override: reply `@greenpipe run-now` to run immediately.",
+            "",
+        ]
+    elif deferral.action == "awaiting_approval":
+        lines += [
+            f"> **Deferral pending your approval.** A {deferral.predicted_savings_pct:.1f}% "
+            f"carbon savings window was found at `{deferral.target_window}`.",
+            ">",
+            "> Reply `@greenpipe confirm-defer` to approve or "
+            "`@greenpipe run-now` to skip.",
+            "",
+        ]
+    elif deferral.action == "recommended":
+        lines += [
+            f"> **Deferral recommended.** {deferral.predicted_savings_pct:.1f}% "
+            f"lower carbon intensity available at `{deferral.target_window}`.",
+            ">",
+            "> Reply `@greenpipe defer` to reschedule or "
+            "`@greenpipe run-now` to proceed.",
+            "",
+        ]
+
+    lines += [
+        f"*Policy mode: `{deferral.policy_mode}` — "
+        f"[configure](https://github.com/greenpipe#auto-deferral-policy)*",
+    ]
+    return "\n".join(lines)
+
+
 def format_help_comment() -> str:
     """Return the @greenpipe help text posted in response to @greenpipe help."""
     return (
@@ -184,6 +240,10 @@ def format_help_comment() -> str:
         "| `@greenpipe analyze` | Analyze the latest pipeline for this MR |\n"
         "| `@greenpipe report` | Generate a full GSF SCI report |\n"
         "| `@greenpipe schedule` | Show carbon-optimal execution windows |\n"
+        "| `@greenpipe defer` | Defer the pipeline to the best low-carbon window |\n"
+        "| `@greenpipe run-now` | Override deferral — run the pipeline immediately |\n"
+        "| `@greenpipe confirm-defer` | Approve a pending deferral |\n"
+        "| `@greenpipe why` | Explain the urgency classification decision |\n"
         "| `@greenpipe help` | Show this help message |\n\n"
         "*[GreenPipe](https://github.com/greenpipe) implements "
         "[GSF SCI](https://sci.greensoftware.foundation/), "
