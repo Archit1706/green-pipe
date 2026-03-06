@@ -212,9 +212,27 @@ class GitLabNoteEvent(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class DeferralDecision(BaseModel):
+    """Details of an auto-deferral decision embedded in webhook responses."""
+
+    action: str = Field(
+        description="Action taken: 'none' | 'recommended' | 'awaiting_approval' | 'deferred' | 'force_run'"
+    )
+    policy_mode: str = Field(description="Active deferral policy mode")
+    reason: str = Field(description="Human-readable reason for the decision")
+    pipeline_cancelled: bool = False
+    schedule_id: int | None = None
+    schedule_cron: str | None = None
+    target_window: str | None = None
+    predicted_savings_pct: float | None = None
+    original_intensity_gco2_kwh: float | None = None
+    target_intensity_gco2_kwh: float | None = None
+
+
 class AgentWebhookResponse(BaseModel):
     """Standard envelope returned by all webhook handlers."""
 
     status: str                    # "accepted" | "skipped" | "error"
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
+    deferral: DeferralDecision | None = None
