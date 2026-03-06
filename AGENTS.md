@@ -133,7 +133,11 @@ When triggered, GreenPipe:
 4. Queries carbon intensity from GSF Carbon Aware SDK
 5. Calculates SCI per ISO/IEC 21031:2024
 6. Classifies urgency via DistilBERT NLP (INT8 quantized)
-7. Posts a sustainability report as an MR comment (if an open MR exists)
+7. **Evaluates auto-deferral decision** based on policy mode:
+   - `recommend-only` (default): posts report with savings recommendation
+   - `approval-required`: posts report with `@greenpipe confirm-defer` prompt
+   - `auto-execute`: cancels the pipeline and creates a schedule for the optimal window
+8. Posts a sustainability report (with deferral action) as an MR comment
 
 ### `@greenpipe` Mention
 
@@ -152,6 +156,10 @@ Supported commands (case-insensitive):
 | `@greenpipe analyze` | Analyze the latest pipeline for this MR |
 | `@greenpipe report` | Generate a full GSF SCI report (same as analyze) |
 | `@greenpipe schedule` | Show carbon-optimal execution windows |
+| `@greenpipe defer` | Cancel the pipeline and reschedule to the best low-carbon window |
+| `@greenpipe run-now` | Override deferral — retry the pipeline immediately |
+| `@greenpipe confirm-defer` | Approve a pending deferral (approval-required mode) |
+| `@greenpipe why` | Explain the urgency classification decision |
 | `@greenpipe help` | List available commands |
 
 ---
@@ -176,6 +184,23 @@ GreenPipe accesses:
 | **INT8 quantized inference** | PyTorch dynamic quantization | ~60% energy reduction vs. FP32, aligned with GSF Sustainable Design criteria |
 | **Carbon-aware scheduling** | GSF Carbon Aware SDK 24-hour forecasts | Finds lowest-carbon window in next 24 hours for deferrable pipelines |
 | **Standards-based scoring** | ISO/IEC 21031:2024 SCI formula | Vendor-neutral, auditable carbon metric every developer can understand |
+
+---
+
+## Auto-Deferral Policy
+
+GreenPipe can autonomously reschedule deferrable pipelines to lower-carbon windows.
+
+| Setting | Default | Description |
+| ------- | ------- | ----------- |
+| `GREENPIPE_DEFER_MODE` | `recommend-only` | `recommend-only` / `approval-required` / `auto-execute` |
+| `GREENPIPE_MIN_SAVINGS_PCT` | `20.0` | Minimum carbon savings (%) to trigger action |
+| `GREENPIPE_MAX_DELAY_HOURS` | `24` | Maximum hours a pipeline can be deferred |
+| `GREENPIPE_PROTECTED_BRANCHES` | `main,master,release*` | Never defer these branches (glob patterns) |
+| `GREENPIPE_PROTECTED_ENVS` | `production,staging` | Never defer these environments |
+
+Every deferral decision is logged to the `deferral_audit_log` table with full context:
+original intensity, target window, predicted savings, urgency class, and action taken.
 
 ---
 
