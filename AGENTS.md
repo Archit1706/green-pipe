@@ -113,6 +113,35 @@ and a plain-language explanation.
 
 ---
 
+### `analyze_code_efficiency`
+
+Analyses MR code for energy efficiency using Anthropic Claude (Green Code Profiler).
+
+**Endpoint:** `POST /agent/tools/analyze_code_efficiency`
+
+**Input:**
+```json
+{
+  "project_id": 12345,
+  "mr_iid": 42,
+  "diff_text": null
+}
+```
+
+Provide `project_id` + `mr_iid` to fetch the diff from GitLab, **or** `diff_text` for
+offline analysis.
+
+**Output:** Structured list of energy-efficiency suggestions with issue type,
+line range, estimated energy impact (low/medium/high), and actionable fix.
+
+**Requires:** `ANTHROPIC_API_KEY` environment variable.
+
+**Architecture note:** GreenPipe uses a hybrid AI approach — a tiny INT8 DistilBERT
+for frequent urgency classification, and Claude for on-demand deep code analysis.
+This ensures the agent itself practises sustainable design.
+
+---
+
 ## Triggers
 
 ### Pipeline Completion
@@ -156,6 +185,7 @@ Supported commands (case-insensitive):
 | `@greenpipe analyze` | Analyze the latest pipeline for this MR |
 | `@greenpipe report` | Generate a full GSF SCI report (same as analyze) |
 | `@greenpipe schedule` | Show carbon-optimal execution windows |
+| `@greenpipe optimize` | Analyse MR code for energy efficiency (Claude AI) |
 | `@greenpipe defer` | Cancel the pipeline and reschedule to the best low-carbon window |
 | `@greenpipe run-now` | Override deferral — retry the pipeline immediately |
 | `@greenpipe confirm-defer` | Approve a pending deferral (approval-required mode) |
@@ -183,6 +213,7 @@ GreenPipe accesses:
 | **NLP urgency classification** | DistilBERT fine-tuned on 256 commit examples + keyword fallback | Distinguishes `hotfix:` emergencies from `docs:` deferrals automatically |
 | **INT8 quantized inference** | PyTorch dynamic quantization | ~60% energy reduction vs. FP32, aligned with GSF Sustainable Design criteria |
 | **Carbon-aware scheduling** | GSF Carbon Aware SDK 24-hour forecasts | Finds lowest-carbon window in next 24 hours for deferrable pipelines |
+| **Green code profiling** | Anthropic Claude (on-demand) | Deep energy-efficiency analysis of MR diffs — N+1 queries, missing caching, sync I/O |
 | **Standards-based scoring** | ISO/IEC 21031:2024 SCI formula | Vendor-neutral, auditable carbon metric every developer can understand |
 
 ---
@@ -215,6 +246,9 @@ GITLAB_TOKEN=<personal-access-token>      # Scopes: api, ai_features
 # Required for webhook authentication
 GITLAB_WEBHOOK_SECRET=<random-secret>     # Must match the GitLab webhook secret token
 
+# Optional: Anthropic Claude API for code efficiency analysis
+ANTHROPIC_API_KEY=<your-anthropic-api-key>
+
 # Optional: self-hosted Carbon Aware SDK endpoint
 CARBON_AWARE_SDK_URL=http://localhost:5073
 
@@ -237,6 +271,7 @@ DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/greenpipe
 | `POST` | `/agent/tools/generate_sci_report` | Agent tool: generate + post report |
 | `POST` | `/agent/tools/suggest_scheduling` | Agent tool: find best window |
 | `POST` | `/agent/tools/classify_urgency` | Agent tool: NLP urgency classification |
+| `POST` | `/agent/tools/analyze_code_efficiency` | Agent tool: Claude code profiler |
 | `POST` | `/agent/webhooks/pipeline` | Pipeline completion webhook |
 | `POST` | `/agent/webhooks/mention` | @greenpipe mention webhook |
 
