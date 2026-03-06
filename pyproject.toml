@@ -24,6 +24,8 @@ dependencies = [
     "python-gitlab>=4.0.0",
     # HTTP client (for Carbon Aware SDK API)
     "httpx>=0.28.0",
+    # Anthropic Claude API (for code efficiency analysis)
+    "anthropic>=0.34.0",
     # ML/NLP
     "transformers>=4.47.0",
     "torch>=2.5.0",
