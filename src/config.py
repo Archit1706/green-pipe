@@ -25,5 +25,17 @@ class Settings(BaseSettings):
     watttime_user: str = ""
     watttime_password: str = ""
 
+    # Auto-deferral policy
+    # Mode: "recommend-only" | "approval-required" | "auto-execute"
+    greenpipe_defer_mode: str = "recommend-only"
+    # Minimum carbon savings (%) to trigger deferral action
+    greenpipe_min_savings_pct: float = 20.0
+    # Maximum hours a pipeline may be deferred
+    greenpipe_max_delay_hours: int = 24
+    # Comma-separated branch patterns that must never be deferred
+    greenpipe_protected_branches: str = "main,master,release*"
+    # Comma-separated environment names that must never be deferred
+    greenpipe_protected_envs: str = "production,staging"
+
 
 settings = Settings()
