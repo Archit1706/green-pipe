@@ -23,6 +23,7 @@ Security:
 from __future__ import annotations
 
 import fnmatch
+import hmac
 import logging
 import re
 from datetime import datetime, timezone
@@ -85,7 +86,7 @@ def _verify_webhook_token(x_gitlab_token: str | None) -> None:
     secret = settings.gitlab_webhook_secret
     if not secret:
         return  # verification disabled
-    if x_gitlab_token != secret:
+    if not hmac.compare_digest(x_gitlab_token or "", secret):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing X-Gitlab-Token.",
@@ -318,7 +319,10 @@ async def tool_analyze_pipeline(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("analyze_pipeline tool failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Analysis error: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Analysis error. Check server logs for details.",
+        ) from exc
 
     return AnalyzePipelineOutput(
         pipeline_id=body.pipeline_id,
@@ -358,7 +362,10 @@ async def tool_generate_sci_report(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("generate_sci_report tool failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Analysis error: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Analysis error. Check server logs for details.",
+        ) from exc
 
     markdown = format_mr_comment(report)
     comment_posted = False
@@ -653,7 +660,7 @@ async def webhook_pipeline_event(
         )
         return AgentWebhookResponse(
             status="error",
-            message=f"Analysis failed: {exc}",
+            message="Analysis failed. Check server logs for details.",
         )
 
     # --- Evaluate deferral decision ---
@@ -812,11 +819,11 @@ async def webhook_mention_event(
             )
         except Exception as exc:
             logger.error("Mention analysis failed: %s", exc, exc_info=True)
-            reply = f"> ❌ **GreenPipe error:** {exc}"
+            reply = "> ❌ **GreenPipe error:** Analysis failed. Check server logs."
             _post_reply(project_id, mr_iid, reply)
             return AgentWebhookResponse(
                 status="error",
-                message=f"Analysis failed: {exc}",
+                message="Analysis failed. Check server logs for details.",
             )
 
     if command == "schedule":
@@ -838,7 +845,7 @@ async def webhook_mention_event(
                 )
         except Exception as exc:
             logger.warning("schedule command failed: %s", exc)
-            reply = f"> ⚠️ **GreenPipe:** Could not retrieve forecast data ({exc})."
+            reply = "> ⚠️ **GreenPipe:** Could not retrieve forecast data."
         _post_reply(project_id, mr_iid, reply)
         return AgentWebhookResponse(
             status="accepted",
@@ -905,7 +912,7 @@ async def webhook_mention_event(
                 )
         except Exception as exc:
             logger.warning("confirm-defer failed: %s", exc)
-            reply = f"> ❌ **GreenPipe:** Deferral confirmation failed: {exc}"
+            reply = "> ❌ **GreenPipe:** Deferral confirmation failed. Check server logs."
         _post_reply(project_id, mr_iid, reply)
         return AgentWebhookResponse(
             status="accepted",
@@ -952,7 +959,7 @@ async def webhook_mention_event(
                 )
         except Exception as exc:
             logger.warning("defer command failed: %s", exc)
-            reply = f"> ❌ **GreenPipe:** Deferral failed: {exc}"
+            reply = "> ❌ **GreenPipe:** Deferral failed. Check server logs."
         _post_reply(project_id, mr_iid, reply)
         return AgentWebhookResponse(
             status="accepted",
@@ -1006,11 +1013,11 @@ async def webhook_mention_event(
             )
         except Exception as exc:
             logger.error("optimize command failed: %s", exc, exc_info=True)
-            reply = f"> ❌ **GreenPipe error:** Code analysis failed: {exc}"
+            reply = "> ❌ **GreenPipe error:** Code analysis failed. Check server logs."
             _post_reply(project_id, mr_iid, reply)
             return AgentWebhookResponse(
                 status="error",
-                message=f"Code analysis failed: {exc}",
+                message="Code analysis failed. Check server logs for details.",
             )
 
     if command == "why":
@@ -1061,9 +1068,12 @@ async def webhook_mention_event(
         )
 
     # Unknown command — post help
+    # Sanitise user input before embedding in Markdown: strip backticks and
+    # angle brackets to prevent Markdown/HTML injection in the MR comment.
+    safe_note = note[:100].replace("`", "").replace("<", "&lt;").replace(">", "&gt;")
     reply = (
         "> ❓ **GreenPipe:** Unknown command. "
-        f"You said: `{note[:100]}`\n\n"
+        f"You said: `{safe_note}`\n\n"
         + format_help_comment()
     )
     _post_reply(project_id, mr_iid, reply)
