@@ -18,6 +18,13 @@ _URGENCY_BADGES = {
     "deferrable": "🟢 **Deferrable** — consider carbon-aware scheduling",
 }
 
+# Compact urgency badges for the summary card header
+_URGENCY_SHORT = {
+    "urgent":     "🔴 Urgent",
+    "normal":     "🟡 Normal",
+    "deferrable": "🟢 Deferrable",
+}
+
 _SCI_LABEL = "SCI (ISO/IEC 21031:2024)"
 
 
@@ -26,40 +33,69 @@ def format_mr_comment(report: PipelineAnalysisReport) -> str:
     Return a GitLab markdown string ready to be posted as an MR comment.
 
     Sections:
-      1. Header + urgency badge
-      2. SCI scorecard
-      3. Per-job energy table
+      1. Compact summary card (header + one-row scorecard)
+      2. SCI scorecard (collapsible detail)
+      3. Per-job energy table (collapsible)
       4. Carbon intensity info
       5. Scheduling recommendation (with best window if available)
-      6. GSF standards footer
+      6. Developer Impact section
+      7. Available Commands
+      8. GSF standards footer
     """
     lines: list[str] = []
 
+    sci = report.sci
+    urgency_short = _URGENCY_SHORT.get(report.urgency_class, report.urgency_class)
+
     # -----------------------------------------------------------------------
-    # 1. Header
+    # 1. Compact summary card
     # -----------------------------------------------------------------------
-    pipeline_ref = f"pipeline #{report.gitlab_pipeline_id}" if report.gitlab_pipeline_id else "pipeline"
+
+    # Build savings string for header
+    savings_str = ""
+    if report.can_defer and report.scheduling_window:
+        savings_str = f" | {report.scheduling_window.savings_percent:.0f}% savings available"
+
+    # Build recommended action string
+    if report.urgency_class == "urgent":
+        action_str = "Run immediately"
+    elif report.can_defer and report.scheduling_window:
+        action_str = f"Defer to `{report.scheduling_window.timestamp or 'TBD'}`"
+    elif report.urgency_class == "deferrable":
+        action_str = "Deferrable (no window found)"
+    else:
+        action_str = "Proceed on schedule"
+
+    pipeline_ref = (
+        f"pipeline #{report.gitlab_pipeline_id}" if report.gitlab_pipeline_id else "pipeline"
+    )
     lines += [
-        "## 🌱 GreenPipe Carbon Report",
+        f"## 🌱 GreenPipe Carbon Report — "
+        f"{sci.sci_score:.2f} gCO₂e | {urgency_short}{savings_str}",
         "",
-        f"Analysis for **{pipeline_ref}** "
-        f"(`{report.pipeline_ref or 'unknown ref'}` @ "
-        f"`{(report.pipeline_sha or '')[:8] or 'unknown sha'}`) "
-        f"— analysed at {report.analyzed_at.strftime('%Y-%m-%d %H:%M UTC')}",
+        f"| SCI Score | Energy | Carbon Intensity | Urgency | Recommended Action |",
+        f"|-----------|--------|-----------------|---------|-------------------|",
+        f"| `{sci.sci_score:.4f} gCO₂e` "
+        f"| `{report.total_energy_kwh:.6f} kWh` "
+        f"| `{report.carbon_intensity_gco2_kwh:.1f} gCO₂e/kWh` "
+        f"| {urgency_short} ({report.urgency_confidence:.0%}) "
+        f"| {action_str} |",
         "",
-        f"**Urgency:** {_URGENCY_BADGES.get(report.urgency_class, report.urgency_class)} "
-        f"*(confidence {report.urgency_confidence:.0%})*",
+        f"*{pipeline_ref} · "
+        f"`{report.pipeline_ref or 'unknown ref'}` @ "
+        f"`{(report.pipeline_sha or '')[:8] or 'unknown sha'}` · "
+        f"{report.analyzed_at.strftime('%Y-%m-%d %H:%M UTC')}*",
         "",
         "---",
         "",
     ]
 
     # -----------------------------------------------------------------------
-    # 2. SCI scorecard
+    # 2. SCI scorecard (collapsible)
     # -----------------------------------------------------------------------
-    sci = report.sci
     lines += [
-        f"### 📊 {_SCI_LABEL}",
+        "<details>",
+        f"<summary>📊 {_SCI_LABEL} — Full Breakdown</summary>",
         "",
         "| Metric | Value |",
         "| ------ | ----- |",
@@ -69,9 +105,6 @@ def format_mr_comment(report: PipelineAnalysisReport) -> str:
         f"| Total carbon | `{sci.total_carbon_gco2:.4f} gCO₂e` |",
         f"| Total energy (E) | `{report.total_energy_kwh:.6f} kWh` |",
         f"| Carbon intensity (I) | `{report.carbon_intensity_gco2_kwh:.1f} gCO₂e/kWh` |",
-        "",
-        "<details>",
-        "<summary>Formula details</summary>",
         "",
         "```",
         "SCI = ((E × I) + M) / R",
@@ -83,15 +116,15 @@ def format_mr_comment(report: PipelineAnalysisReport) -> str:
         "",
         "</details>",
         "",
-        "---",
-        "",
     ]
 
     # -----------------------------------------------------------------------
-    # 3. Per-job energy table
+    # 3. Per-job energy table (collapsible)
     # -----------------------------------------------------------------------
     lines += [
-        "### ⚡ Energy Breakdown",
+        "<details>",
+        f"<summary>⚡ Energy Breakdown — {len(report.job_reports)} job(s), "
+        f"{report.total_energy_kwh:.6f} kWh total</summary>",
         "",
         "| Job | Stage | Duration | Runner | CPU% | TDP Factor | Energy (kWh) |",
         "| --- | ----- | -------- | ------ | ---- | ---------- | ------------ |",
@@ -111,7 +144,7 @@ def format_mr_comment(report: PipelineAnalysisReport) -> str:
         f"**Total energy:** `{report.total_energy_kwh:.6f} kWh`  "
         f"*(methodology: {report.energy_methodology})*",
         "",
-        "---",
+        "</details>",
         "",
     ]
 
@@ -119,13 +152,11 @@ def format_mr_comment(report: PipelineAnalysisReport) -> str:
     # 4. Carbon intensity
     # -----------------------------------------------------------------------
     lines += [
-        "### 🏭 Carbon Intensity",
+        f"### 🏭 Carbon Intensity — "
+        f"`{report.carbon_intensity_gco2_kwh:.1f} gCO₂e/kWh` "
+        f"@ `{report.runner_location}`",
         "",
-        f"- **Location:** `{report.runner_location}`",
-        f"- **Intensity:** `{report.carbon_intensity_gco2_kwh:.1f} gCO₂e/kWh`",
         f"- **Source:** {report.carbon_data_source}",
-        "",
-        "---",
         "",
     ]
 
@@ -142,7 +173,7 @@ def format_mr_comment(report: PipelineAnalysisReport) -> str:
         w = report.scheduling_window
         saved_co2 = report.carbon_saved_if_deferred_gco2()
         lines += [
-            "| Recommended window | Intensity | Savings |",
+            "| Recommended Window | Intensity | Savings |",
             "| ------------------ | --------- | ------- |",
             f"| `{w.timestamp or 'TBD'}` "
             f"| `{w.intensity_gco2_kwh:.1f} gCO₂e/kWh` "
@@ -155,7 +186,44 @@ def format_mr_comment(report: PipelineAnalysisReport) -> str:
     lines += ["---", ""]
 
     # -----------------------------------------------------------------------
-    # 6. GSF standards footer
+    # 6. Developer Impact section
+    # -----------------------------------------------------------------------
+    lines += [
+        "### 💡 Developer Time Saved",
+        "",
+        "This analysis ran automatically — no manual setup required.",
+        "",
+        "- ⚡ **Pipeline analysis:** automated *(saved ~5 min manual ECO-CI run)*",
+        "- 🗓️ **Scheduling recommendation:** automated *(saved ~10 min grid carbon research)*",
+        "- 📊 **Historical tracking:** automated *(would require a spreadsheet without GreenPipe)*",
+        "",
+        "---",
+        "",
+    ]
+
+    # -----------------------------------------------------------------------
+    # 7. Available Commands
+    # -----------------------------------------------------------------------
+    lines += [
+        "### 🎮 Available Commands",
+        "",
+        "Reply with one of:",
+        "",
+        "| Command | Effect |",
+        "|---------|--------|",
+        "| `@greenpipe run-now` | Override deferral — run pipeline immediately |",
+        "| `@greenpipe defer` | Defer to the best low-carbon window |",
+        "| `@greenpipe optimize` | Analyse this MR's code for energy inefficiencies |",
+        "| `@greenpipe why` | Explain the urgency classification decision |",
+        "| `@greenpipe schedule` | Show carbon-optimal execution windows |",
+        "| `@greenpipe help` | List all available commands |",
+        "",
+        "---",
+        "",
+    ]
+
+    # -----------------------------------------------------------------------
+    # 8. GSF standards footer
     # -----------------------------------------------------------------------
     lines += [
         "<details>",
@@ -167,8 +235,6 @@ def format_mr_comment(report: PipelineAnalysisReport) -> str:
     lines += [
         "",
         "</details>",
-        "",
-        "---",
         "",
         "*Generated by [🌱 GreenPipe](https://github.com/greenpipe) "
         "— built on [Green Software Foundation](https://greensoftware.foundation/) standards*",
