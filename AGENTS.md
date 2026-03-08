@@ -258,6 +258,34 @@ DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/greenpipe
 
 ---
 
+## One-Click Installation
+
+Add GreenPipe to any GitLab project with a single `include:` line in your `.gitlab-ci.yml`:
+
+```yaml
+include:
+  - project: 'archit1706/green-pipe'
+    ref: main
+    file: 'templates/greenpipe-ci.yml'
+```
+
+Then set these **CI/CD Variables** in your project (Settings → CI/CD → Variables):
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `GREENPIPE_API_URL` | Yes | Base URL of your GreenPipe instance |
+| `GITLAB_WEBHOOK_SECRET` | Yes | Must match GreenPipe's `GITLAB_WEBHOOK_SECRET` |
+| `GREENPIPE_DEFER_MODE` | No | `recommend-only` (default) / `approval-required` / `auto-execute` |
+
+That's it! GreenPipe will automatically analyse every pipeline and post carbon reports to your MRs.
+
+### GitLab Duo Agent Platform
+
+GreenPipe is registered as a GitLab Duo Agent via `.gitlab/agents/greenpipe/config.yaml`.
+This enables discovery through GitLab's agent platform and provides structured tool definitions.
+
+---
+
 ## API Quick Reference
 
 | Method | Path | Description |
