@@ -6,7 +6,6 @@ All carbon values are in gCO₂e; energy in kWh; SCI scores in gCO₂e/pipeline_
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, Field

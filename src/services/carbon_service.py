@@ -12,10 +12,8 @@ References:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
 from typing import Any
 
 import httpx
@@ -212,6 +210,8 @@ class CarbonAwareSDKClient:
 class _IntensityCache:
     """Lightweight TTL cache for carbon intensity values (1-hour buckets)."""
 
+    _MAX_ENTRIES = 256  # prevent unbounded memory growth
+
     def __init__(self, ttl_seconds: int = 3600) -> None:
         self._store: dict[str, tuple[float, datetime]] = {}
         self._ttl = timedelta(seconds=ttl_seconds)
@@ -226,9 +226,15 @@ class _IntensityCache:
             value, stored_at = self._store[key]
             if datetime.now(timezone.utc) - stored_at < self._ttl:
                 return value
+            # Expired — remove stale entry
+            del self._store[key]
         return None
 
     def set(self, location: str, value: float) -> None:
+        # Evict oldest entry when cache exceeds max size
+        if len(self._store) >= self._MAX_ENTRIES:
+            oldest_key = min(self._store, key=lambda k: self._store[k][1])
+            del self._store[oldest_key]
         self._store[self._key(location)] = (value, datetime.now(timezone.utc))
 
 
