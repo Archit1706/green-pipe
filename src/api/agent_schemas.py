@@ -149,8 +149,9 @@ class AnalyzeCodeEfficiencyInput(BaseModel):
     )
     diff_text: str | None = Field(
         default=None,
-        description="Raw diff text to analyse. Use this instead of project_id/mr_iid "
-                    "for offline or manual analysis.",
+        max_length=500_000,
+        description="Raw diff text to analyse (max 500 KB). Use this instead of "
+                    "project_id/mr_iid for offline or manual analysis.",
     )
 
 
