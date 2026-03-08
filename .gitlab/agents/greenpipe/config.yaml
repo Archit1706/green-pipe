@@ -1,0 +1,95 @@
+# GreenPipe — GitLab Duo Agent Platform Registration
+#
+# This file registers GreenPipe as a GitLab Duo Agent, enabling it to be
+# discovered and invoked through GitLab's agent platform.
+#
+# Reference: https://docs.gitlab.com/ee/user/duo_agent/
+
+agent:
+  name: greenpipe
+  version: "1.0.0"
+  description: >-
+    GSF-compliant carbon-aware CI/CD agent. Measures pipeline carbon footprint
+    using SCI (ISO/IEC 21031:2024), classifies urgency with INT8 DistilBERT,
+    autonomously reschedules deferrable pipelines to low-carbon windows, and
+    profiles code for energy inefficiencies using Claude.
+
+  # Agent tools — each maps to a POST endpoint on the GreenPipe API
+  tools:
+    - name: analyze_pipeline
+      description: >-
+        Analyze a completed CI/CD pipeline using GSF SCI methodology.
+        Returns energy breakdown, carbon intensity, SCI score, and urgency.
+      url: ${GREENPIPE_API_URL}/agent/tools/analyze_pipeline
+      method: POST
+
+    - name: generate_sci_report
+      description: >-
+        Generate a formatted SCI report and optionally post it as an MR comment.
+      url: ${GREENPIPE_API_URL}/agent/tools/generate_sci_report
+      method: POST
+
+    - name: suggest_scheduling
+      description: >-
+        Find the lowest-carbon execution window within the next N hours
+        using GSF Carbon Aware SDK forecasts.
+      url: ${GREENPIPE_API_URL}/agent/tools/suggest_scheduling
+      method: POST
+
+    - name: classify_urgency
+      description: >-
+        Classify commit message urgency using INT8 DistilBERT NLP or keyword
+        fallback. Determines if a pipeline can be safely deferred.
+      url: ${GREENPIPE_API_URL}/agent/tools/classify_urgency
+      method: POST
+
+    - name: analyze_code_efficiency
+      description: >-
+        Analyse MR code diff for energy efficiency issues using Anthropic Claude.
+        Identifies N+1 queries, missing caching, unbounded loops, sync I/O, etc.
+      url: ${GREENPIPE_API_URL}/agent/tools/analyze_code_efficiency
+      method: POST
+
+  # Webhook triggers
+  triggers:
+    - event: pipeline
+      description: >-
+        Automatically analyse every pipeline on completion and post a carbon
+        report as an MR comment. Evaluates auto-deferral policy.
+      url: ${GREENPIPE_API_URL}/agent/webhooks/pipeline
+
+    - event: note
+      description: >-
+        Respond to @greenpipe mentions in MR comments. Supports commands:
+        analyze, report, schedule, optimize, defer, run-now, confirm-defer, why, help.
+      url: ${GREENPIPE_API_URL}/agent/webhooks/mention
+
+  # Required environment variables
+  variables:
+    - name: GREENPIPE_API_URL
+      description: Base URL of the GreenPipe API (e.g. https://greenpipe.example.com)
+      required: true
+
+    - name: GITLAB_TOKEN
+      description: GitLab personal access token with api scope
+      required: true
+
+    - name: GITLAB_WEBHOOK_SECRET
+      description: Secret token for webhook verification
+      required: true
+
+    - name: ANTHROPIC_API_KEY
+      description: Anthropic API key for Claude code profiling (optional)
+      required: false
+
+  # Standards compliance
+  metadata:
+    standards:
+      - "SCI (ISO/IEC 21031:2024)"
+      - "GSF Carbon Aware SDK"
+      - "GSF Impact Framework (Teads Curve)"
+      - "ECO-CI SPECpower"
+    categories:
+      - sustainability
+      - ci-cd
+      - carbon-awareness

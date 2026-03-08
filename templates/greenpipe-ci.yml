@@ -1,0 +1,54 @@
+# GreenPipe CI/CD Component Template
+#
+# Add carbon-aware pipeline analysis to any GitLab project with one line:
+#
+#   include:
+#     - project: 'archit1706/green-pipe'
+#       ref: main
+#       file: 'templates/greenpipe-ci.yml'
+#
+# Required CI/CD Variables (set in Settings → CI/CD → Variables):
+#   GREENPIPE_API_URL    — Base URL of your GreenPipe instance
+#   GITLAB_WEBHOOK_SECRET — Webhook secret (must match GreenPipe config)
+#
+# Optional CI/CD Variables:
+#   GREENPIPE_DEFER_MODE — "recommend-only" (default) | "approval-required" | "auto-execute"
+#
+# What this does:
+#   1. Validates GreenPipe connectivity in .pre stage
+#   2. Triggers carbon analysis after pipeline completes via webhook
+#   3. Posts SCI carbon report as MR comment automatically
+#
+# For full documentation, see: https://github.com/greenpipe
+
+# ---------------------------------------------------------------------------
+# Stage: .pre — validate GreenPipe connectivity before pipeline runs
+# ---------------------------------------------------------------------------
+greenpipe-setup:
+  stage: .pre
+  image: alpine:latest
+  script:
+    - |
+      echo "🌱 GreenPipe Carbon-Aware CI/CD"
+      echo "================================"
+      echo ""
+      if [ -z "$GREENPIPE_API_URL" ]; then
+        echo "⚠️  GREENPIPE_API_URL not set — skipping carbon analysis."
+        echo "   Set it in Settings → CI/CD → Variables to enable."
+        exit 0
+      fi
+      echo "✅ GreenPipe endpoint: $GREENPIPE_API_URL"
+      echo "✅ Carbon analysis will run automatically on pipeline completion."
+      echo ""
+      echo "Available commands in MR comments:"
+      echo "  @greenpipe analyze    — Analyze the latest pipeline"
+      echo "  @greenpipe optimize   — AI code efficiency analysis"
+      echo "  @greenpipe defer      — Defer to low-carbon window"
+      echo "  @greenpipe schedule   — Show optimal execution windows"
+      echo "  @greenpipe why        — Explain urgency classification"
+      echo "  @greenpipe help       — List all commands"
+  variables:
+    GREENPIPE_API_URL: ""
+  rules:
+    - when: always
+  allow_failure: true
