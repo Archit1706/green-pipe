@@ -78,7 +78,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # FIXME: tighten before production deployment
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Gitlab-Token"],
 )
 
 app.include_router(router)

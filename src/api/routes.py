@@ -245,7 +245,10 @@ async def analyze_pipeline(
             )
     except Exception as exc:
         logger.error("Pipeline analysis failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Analysis failed. Check server logs for details.",
+        ) from exc
 
     pipeline_db_id: int | None = None
     try:
