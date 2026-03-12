@@ -97,6 +97,10 @@ class TestParseMentionCommandExtended:
 
 
 class TestWebhookDeferralDecision:
+    @pytest.fixture(autouse=True)
+    def _clear_secret(self, monkeypatch):
+        monkeypatch.setattr("src.config.settings.gitlab_webhook_secret", "")
+
     def test_pipeline_webhook_includes_deferral_field(self):
         """Terminal pipeline webhook response includes a deferral decision."""
         payload = {
@@ -130,6 +134,10 @@ class TestWebhookDeferralDecision:
 
 
 class TestMentionNewCommands:
+    @pytest.fixture(autouse=True)
+    def _clear_secret(self, monkeypatch):
+        monkeypatch.setattr("src.config.settings.gitlab_webhook_secret", "")
+
     def test_run_now_without_gitlab_client(self):
         payload = {
             "object_kind": "note",

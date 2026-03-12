@@ -212,6 +212,10 @@ class TestParseMentionCommand:
 
 
 class TestWebhookPipelineEvent:
+    @pytest.fixture(autouse=True)
+    def _clear_secret(self, monkeypatch):
+        monkeypatch.setattr("src.config.settings.gitlab_webhook_secret", "")
+
     def test_non_terminal_status_skipped(self):
         payload = {
             "object_kind": "pipeline",
@@ -291,6 +295,10 @@ class TestWebhookPipelineEvent:
 
 
 class TestWebhookMentionEvent:
+    @pytest.fixture(autouse=True)
+    def _clear_secret(self, monkeypatch):
+        monkeypatch.setattr("src.config.settings.gitlab_webhook_secret", "")
+
     def test_non_greenpipe_mention_skipped(self):
         payload = {
             "object_kind": "note",
