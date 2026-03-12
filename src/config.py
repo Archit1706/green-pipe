@@ -41,5 +41,10 @@ class Settings(BaseSettings):
     # Comma-separated environment names that must never be deferred
     greenpipe_protected_envs: str = "production,staging"
 
+    # Multi-region comparison: comma-separated allowed regions.
+    # When non-empty, only these regions appear in compare_regions results.
+    # Empty string means "allow all candidate regions".
+    greenpipe_allowed_regions: str = ""
+
 
 settings = Settings()
