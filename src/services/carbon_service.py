@@ -12,7 +12,9 @@ References:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -74,6 +76,45 @@ REGIONAL_FALLBACK_INTENSITIES: dict[str, float] = {
     "japaneast": 490.0,
     "southeastasia": 510.0,
 }
+
+
+# Default candidate regions for multi-region comparison
+DEFAULT_CANDIDATE_REGIONS: list[str] = [
+    "us-east1",
+    "us-west1",
+    "europe-west1",
+    "asia-southeast1",
+    "australia-southeast1",
+]
+
+# Map the candidate defaults that don't have direct entries in RUNNER_REGION_MAP
+# (so resolve_location can handle them)
+RUNNER_REGION_MAP.update({
+    "asia-southeast1": "southeastasia",
+    "australia-southeast1": "australiaeast",
+})
+
+# Add fallback intensity for Australia
+REGIONAL_FALLBACK_INTENSITIES.setdefault("australiaeast", 550.0)
+
+
+# ---------------------------------------------------------------------------
+# Multi-region comparison result
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RegionComparison:
+    """Result for a single region in a multi-region carbon comparison."""
+
+    location: str              # SDK location string (e.g. "eastus")
+    display_name: str          # Human-friendly region name (e.g. "us-east1")
+    current_intensity_gco2_kwh: float
+    current_source: str
+    best_window_timestamp: str | None = None
+    best_window_intensity_gco2_kwh: float | None = None
+    savings_vs_current_pct: float = 0.0
+    rank: int = 0
+    error: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +406,91 @@ class CarbonService:
             best["duration_minutes"] = duration_minutes
             return best
         return None
+
+    async def compare_regions(
+        self,
+        locations: list[str] | None = None,
+        duration_minutes: int = 10,
+        horizon_hours: int = 24,
+        allowed_regions: list[str] | None = None,
+    ) -> list[RegionComparison]:
+        """
+        Query multiple regions for carbon intensity and best execution window.
+
+        Returns a ranked list of ``RegionComparison`` sorted by effective
+        intensity (best-window intensity when available, else current intensity).
+
+        If *allowed_regions* is provided and non-empty, only locations present
+        in that list are included in the result.
+        """
+        candidates = locations or DEFAULT_CANDIDATE_REGIONS
+
+        # Apply allowed-regions filter
+        if allowed_regions:
+            allowed_set = {r.strip().lower() for r in allowed_regions}
+            candidates = [c for c in candidates if c.strip().lower() in allowed_set]
+            if not candidates:
+                candidates = list(allowed_set)[:10]  # cap at 10
+
+        async def _query_region(display_name: str) -> RegionComparison:
+            sdk_loc = self.resolve_location(display_name)
+            try:
+                intensity, source = await self.get_intensity(display_name, use_cache=True)
+                # Try to find the best execution window
+                window = await self.find_best_execution_window(
+                    location=display_name,
+                    duration_minutes=duration_minutes,
+                    horizon_hours=horizon_hours,
+                )
+                best_ts: str | None = None
+                best_intensity: float | None = None
+                savings_pct = 0.0
+
+                if window:
+                    best_ts = window.get("timestamp")
+                    best_intensity = float(window.get("intensity_gco2_kwh", 0))
+                    if intensity > 0 and best_intensity < intensity:
+                        savings_pct = (intensity - best_intensity) / intensity * 100
+
+                return RegionComparison(
+                    location=sdk_loc,
+                    display_name=display_name,
+                    current_intensity_gco2_kwh=round(intensity, 2),
+                    current_source=source,
+                    best_window_timestamp=best_ts,
+                    best_window_intensity_gco2_kwh=(
+                        round(best_intensity, 2) if best_intensity is not None else None
+                    ),
+                    savings_vs_current_pct=round(savings_pct, 1),
+                )
+            except Exception as exc:
+                logger.warning("compare_regions: error querying '%s': %s", display_name, exc)
+                return RegionComparison(
+                    location=sdk_loc,
+                    display_name=display_name,
+                    current_intensity_gco2_kwh=0.0,
+                    current_source="error",
+                    error=str(exc),
+                )
+
+        # Query all regions concurrently
+        results = await asyncio.gather(*[_query_region(c) for c in candidates])
+
+        # Sort by effective intensity (best_window if available, else current)
+        def _sort_key(r: RegionComparison) -> float:
+            if r.error:
+                return float("inf")
+            if r.best_window_intensity_gco2_kwh is not None:
+                return r.best_window_intensity_gco2_kwh
+            return r.current_intensity_gco2_kwh
+
+        ranked = sorted(results, key=_sort_key)
+
+        # Assign ranks
+        for i, r in enumerate(ranked, 1):
+            r.rank = i
+
+        return ranked
 
     async def close(self) -> None:
         await self._sdk.close()
