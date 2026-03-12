@@ -135,6 +135,54 @@ class ClassifyUrgencyOutput(BaseModel):
     explanation: str
 
 
+class CompareRegionsInput(BaseModel):
+    """Input for the compare_regions agent tool."""
+
+    locations: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Candidate region strings to compare (e.g. 'us-east1', 'europe-west1'). "
+                    "Leave empty to use the default candidate set.",
+    )
+    duration_minutes: int = Field(
+        default=10,
+        ge=1,
+        le=480,
+        description="Expected pipeline duration in minutes (for window sizing)",
+    )
+    horizon_hours: int = Field(
+        default=24,
+        ge=1,
+        le=168,
+        description="How many hours ahead to search for a low-carbon window",
+    )
+
+
+class RegionComparisonResult(BaseModel):
+    """Carbon comparison result for a single region."""
+
+    rank: int = Field(description="Rank in the comparison (1 = greenest)")
+    location: str = Field(description="Carbon Aware SDK location string")
+    display_name: str = Field(description="Human-friendly region name")
+    current_intensity_gco2_kwh: float
+    current_source: str
+    best_window_timestamp: str | None = None
+    best_window_intensity_gco2_kwh: float | None = None
+    savings_vs_current_pct: float = 0.0
+    error: str | None = None
+
+
+class CompareRegionsOutput(BaseModel):
+    """Output of the compare_regions agent tool."""
+
+    regions: list[RegionComparisonResult] = Field(default_factory=list)
+    pareto_summary: str = ""
+    greenest_region: str | None = None
+    your_region: str | None = None
+    your_savings_if_switch_pct: float | None = None
+    message: str = ""
+
+
 class AnalyzeCodeEfficiencyInput(BaseModel):
     """Input for the analyze_code_efficiency agent tool."""
 
