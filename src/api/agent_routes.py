@@ -40,11 +40,14 @@ from src.api.agent_schemas import (
     ClassifyUrgencyInput,
     ClassifyUrgencyOutput,
     CodeEfficiencySuggestion,
+    CompareRegionsInput,
+    CompareRegionsOutput,
     DeferralDecision,
     GenerateSCIReportInput,
     GenerateSCIReportOutput,
     GitLabNoteEvent,
     GitLabPipelineEvent,
+    RegionComparisonResult,
     SuggestSchedulingInput,
     SuggestSchedulingOutput,
 )
@@ -53,6 +56,7 @@ from src.api.report_formatter import (
     format_deferral_comment,
     format_help_comment,
     format_mr_comment,
+    format_regions_comment,
 )
 from src.config import settings
 from src.nlp.classifier import classify_urgency
@@ -588,6 +592,86 @@ async def tool_analyze_code_efficiency(
     )
 
 
+@agent_tools_router.post(
+    "/compare_regions",
+    response_model=CompareRegionsOutput,
+    summary="Compare carbon intensity across multiple regions",
+)
+async def tool_compare_regions(
+    body: CompareRegionsInput,
+) -> CompareRegionsOutput:
+    """
+    Query multiple regions for current carbon intensity and best execution
+    window.  Returns a ranked list so the user can pick the greenest region.
+
+    Leave ``locations`` empty to use the default candidate regions.
+    Set ``GREENPIPE_ALLOWED_REGIONS`` to restrict which regions are shown.
+    """
+    # Parse allowed regions from settings
+    allowed: list[str] | None = None
+    raw = settings.greenpipe_allowed_regions.strip()
+    if raw:
+        allowed = [r.strip() for r in raw.split(",") if r.strip()]
+
+    try:
+        results = await _carbon_service.compare_regions(
+            locations=body.locations or None,
+            duration_minutes=body.duration_minutes,
+            horizon_hours=body.horizon_hours,
+            allowed_regions=allowed,
+        )
+    except Exception as exc:
+        logger.error("compare_regions tool failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Region comparison failed. Check server logs for details.",
+        ) from exc
+
+    region_results = [
+        RegionComparisonResult(
+            rank=r.rank,
+            location=r.location,
+            display_name=r.display_name,
+            current_intensity_gco2_kwh=r.current_intensity_gco2_kwh,
+            current_source=r.current_source,
+            best_window_timestamp=r.best_window_timestamp,
+            best_window_intensity_gco2_kwh=r.best_window_intensity_gco2_kwh,
+            savings_vs_current_pct=r.savings_vs_current_pct,
+            error=r.error,
+        )
+        for r in results
+    ]
+
+    # Build Pareto summary
+    greenest = results[0] if results else None
+    greenest_name = greenest.display_name if greenest else None
+    pareto_lines: list[str] = []
+    if greenest and len(results) > 1:
+        ref_intensity = greenest.best_window_intensity_gco2_kwh or greenest.current_intensity_gco2_kwh
+        for r in results[1:]:
+            r_intensity = r.best_window_intensity_gco2_kwh or r.current_intensity_gco2_kwh
+            if ref_intensity > 0 and r_intensity > 0:
+                pct_diff = (r_intensity - ref_intensity) / r_intensity * 100
+                pareto_lines.append(
+                    f"{greenest.display_name} is {pct_diff:.0f}% greener than "
+                    f"{r.display_name}"
+                )
+
+    pareto_summary = "; ".join(pareto_lines) if pareto_lines else ""
+
+    message = (
+        f"Compared {len(results)} regions. "
+        + (f"Greenest: {greenest_name}." if greenest_name else "No regions available.")
+    )
+
+    return CompareRegionsOutput(
+        regions=region_results,
+        pareto_summary=pareto_summary,
+        greenest_region=greenest_name,
+        message=message,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Webhook router
 # ---------------------------------------------------------------------------
@@ -730,6 +814,8 @@ async def webhook_mention_event(
       @greenpipe run-now        — override deferral and run the pipeline immediately
       @greenpipe confirm-defer  — approve a pending deferral
       @greenpipe defer          — manually request deferral to best window
+      @greenpipe optimize       — analyse MR code for energy efficiency
+      @greenpipe regions        — compare carbon intensity across regions
       @greenpipe why            — explain the last urgency classification
       @greenpipe help           — list available commands
 
@@ -1020,6 +1106,31 @@ async def webhook_mention_event(
                 message="Code analysis failed. Check server logs for details.",
             )
 
+    if command == "regions":
+        # Multi-region carbon comparison
+        region_count = 0
+        try:
+            # Parse allowed regions from settings
+            allowed: list[str] | None = None
+            raw_allowed = settings.greenpipe_allowed_regions.strip()
+            if raw_allowed:
+                allowed = [r.strip() for r in raw_allowed.split(",") if r.strip()]
+
+            region_results = await _carbon_service.compare_regions(
+                allowed_regions=allowed,
+            )
+            region_count = len(region_results)
+            reply = format_regions_comment(region_results)
+        except Exception as exc:
+            logger.warning("regions command failed: %s", exc)
+            reply = "> ⚠️ **GreenPipe:** Could not compare regions. Check server logs."
+        _post_reply(project_id, mr_iid, reply)
+        return AgentWebhookResponse(
+            status="accepted",
+            message="Region comparison posted.",
+            details={"command": "regions", "regions_compared": region_count},
+        )
+
     if command == "why":
         # Explain the urgency classification for the latest pipeline
         pipeline_id = _latest_pipeline_for_mr(event)
@@ -1089,7 +1200,7 @@ async def webhook_mention_event(
 # ---------------------------------------------------------------------------
 
 _COMMAND_RE = re.compile(
-    r"@greenpipe\s+(analyze|report|schedule|run-now|confirm-defer|defer|optimize|why|help)",
+    r"@greenpipe\s+(analyze|report|schedule|run-now|confirm-defer|defer|optimize|regions|why|help)",
     re.IGNORECASE,
 )
 
