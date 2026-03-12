@@ -142,6 +142,32 @@ This ensures the agent itself practises sustainable design.
 
 ---
 
+### `compare_regions`
+
+Compares carbon intensity across multiple regions to find the greenest location
+for pipeline execution.
+
+**Endpoint:** `POST /agent/tools/compare_regions`
+
+**Input:**
+```json
+{
+  "locations": ["us-east1", "us-west1", "europe-west1"],
+  "duration_minutes": 15,
+  "horizon_hours": 24
+}
+```
+
+Leave `locations` empty to use the default candidate set (`us-east1`, `us-west1`,
+`europe-west1`, `asia-southeast1`, `australia-southeast1`).
+
+**Output:** Ranked list of regions with current intensity, best execution window,
+and Pareto summary showing relative carbon savings between regions.
+
+**Policy:** Set `GREENPIPE_ALLOWED_REGIONS` to restrict which regions are shown.
+
+---
+
 ## Triggers
 
 ### Pipeline Completion
@@ -186,6 +212,7 @@ Supported commands (case-insensitive):
 | `@greenpipe report` | Generate a full GSF SCI report (same as analyze) |
 | `@greenpipe schedule` | Show carbon-optimal execution windows |
 | `@greenpipe optimize` | Analyse MR code for energy efficiency (Claude AI) |
+| `@greenpipe regions` | Compare carbon intensity across multiple candidate regions |
 | `@greenpipe defer` | Cancel the pipeline and reschedule to the best low-carbon window |
 | `@greenpipe run-now` | Override deferral — retry the pipeline immediately |
 | `@greenpipe confirm-defer` | Approve a pending deferral (approval-required mode) |
@@ -254,6 +281,9 @@ CARBON_AWARE_SDK_URL=http://localhost:5073
 
 # Optional: PostgreSQL for historical analytics
 DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/greenpipe
+
+# Optional: restrict multi-region comparison to specific regions
+GREENPIPE_ALLOWED_REGIONS=us-east1,us-west1,europe-west1
 ```
 
 ---
@@ -300,6 +330,7 @@ This enables discovery through GitLab's agent platform and provides structured t
 | `POST` | `/agent/tools/suggest_scheduling` | Agent tool: find best window |
 | `POST` | `/agent/tools/classify_urgency` | Agent tool: NLP urgency classification |
 | `POST` | `/agent/tools/analyze_code_efficiency` | Agent tool: Claude code profiler |
+| `POST` | `/agent/tools/compare_regions` | Agent tool: multi-region carbon comparison |
 | `POST` | `/agent/webhooks/pipeline` | Pipeline completion webhook |
 | `POST` | `/agent/webhooks/mention` | @greenpipe mention webhook |
 
