@@ -27,7 +27,6 @@ import hmac
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, status
 
@@ -51,10 +50,12 @@ from src.api.agent_schemas import (
     SuggestSchedulingInput,
     SuggestSchedulingOutput,
 )
+from src.api.analytics_schemas import LeaderboardEntry, LeaderboardResponse
 from src.api.report_formatter import (
     format_code_efficiency_comment,
     format_deferral_comment,
     format_help_comment,
+    format_leaderboard_comment,
     format_mr_comment,
     format_regions_comment,
 )
@@ -97,7 +98,7 @@ def _verify_webhook_token(x_gitlab_token: str | None) -> None:
         )
 
 
-def _build_markdown_summary(report: Any) -> str:
+def _build_markdown_summary(report: PipelineAnalysisReport) -> str:
     """One-paragraph human-readable summary of an analysis report."""
     defer_text = (
         "Consider deferring to a lower-carbon window."
@@ -320,7 +321,11 @@ async def tool_analyze_pipeline(
             pipeline_id=body.pipeline_id,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        logger.warning("analyze_pipeline service unavailable: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Service unavailable. Check server logs for details.",
+        ) from exc
     except Exception as exc:
         logger.error("analyze_pipeline tool failed: %s", exc, exc_info=True)
         raise HTTPException(
@@ -363,7 +368,11 @@ async def tool_generate_sci_report(
             pipeline_id=body.pipeline_id,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        logger.warning("generate_sci_report service unavailable: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Service unavailable. Check server logs for details.",
+        ) from exc
     except Exception as exc:
         logger.error("generate_sci_report tool failed: %s", exc, exc_info=True)
         raise HTTPException(
@@ -1131,6 +1140,79 @@ async def webhook_mention_event(
             details={"command": "regions", "regions_compared": region_count},
         )
 
+    if command == "leaderboard":
+        # Show top green contributors leaderboard
+        entry_count = 0
+        try:
+            from src.database import get_session as _get_session
+            from sqlalchemy import Integer as _Int, func as _func, select as _select
+            from src.models.pipeline import PipelineRun as _PR
+
+            async for session in _get_session():
+                base = _select(_PR).where(_PR.author_name.isnot(None))
+                if project_id:
+                    base = base.where(_PR.project_id == project_id)
+                sub = base.subquery()
+
+                stmt = (
+                    _select(
+                        sub.c.author_name,
+                        _func.count().label("pipeline_count"),
+                        _func.avg(sub.c.sci_score).label("avg_sci"),
+                        _func.sum(sub.c.total_carbon_gco2).label("total_carbon"),
+                        _func.sum(
+                            _func.cast(
+                                sub.c.urgency_classification == "deferrable",
+                                _Int,
+                            )
+                        ).label("deferred_count"),
+                    )
+                    .group_by(sub.c.author_name)
+                    .order_by(_func.avg(sub.c.sci_score).asc())
+                    .limit(10)
+                )
+
+                result = await session.execute(stmt)
+                rows = result.all()
+
+                entries: list[LeaderboardEntry] = []
+                for rank, row in enumerate(rows, 1):
+                    pc = int(row.pipeline_count)
+                    dc = int(row.deferred_count or 0)
+                    tc = float(row.total_carbon or 0)
+                    dp = (dc / pc * 100) if pc > 0 else 0.0
+                    saved = tc * (dp / 100) * 0.2
+
+                    entries.append(
+                        LeaderboardEntry(
+                            rank=rank,
+                            author_name=row.author_name,
+                            pipeline_count=pc,
+                            avg_sci_score=round(float(row.avg_sci or 0), 4),
+                            total_carbon_gco2e=round(tc, 4),
+                            deferred_count=dc,
+                            deferred_percent=round(dp, 1),
+                            co2e_saved_gco2e=round(saved, 4),
+                        )
+                    )
+                entry_count = len(entries)
+                reply = format_leaderboard_comment(entries)
+                _post_reply(project_id, mr_iid, reply)
+                break
+        except Exception as exc:
+            logger.warning("leaderboard command failed: %s", exc)
+            reply = (
+                "> ⚠️ **GreenPipe:** Could not load leaderboard. "
+                "Database may be unavailable."
+            )
+            _post_reply(project_id, mr_iid, reply)
+
+        return AgentWebhookResponse(
+            status="accepted",
+            message="Leaderboard posted.",
+            details={"command": "leaderboard", "entries": entry_count},
+        )
+
     if command == "why":
         # Explain the urgency classification for the latest pipeline
         pipeline_id = _latest_pipeline_for_mr(event)
@@ -1200,7 +1282,7 @@ async def webhook_mention_event(
 # ---------------------------------------------------------------------------
 
 _COMMAND_RE = re.compile(
-    r"@greenpipe\s+(analyze|report|schedule|run-now|confirm-defer|defer|optimize|regions|why|help)",
+    r"@greenpipe\s+(analyze|report|schedule|run-now|confirm-defer|defer|optimize|regions|leaderboard|why|help)",
     re.IGNORECASE,
 )
 
