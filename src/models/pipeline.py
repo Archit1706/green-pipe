@@ -41,6 +41,7 @@ class PipelineRun(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     runner_location: Mapped[str | None] = mapped_column(String(100))
+    author_name: Mapped[str | None] = mapped_column(String(255), index=True)
 
     # -- Energy metrics (GSF Impact Framework: Teads curve + SPECpower) --
     energy_kwh: Mapped[float | None] = mapped_column(Numeric(10, 6))
