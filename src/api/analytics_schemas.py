@@ -124,6 +124,32 @@ class SavingsEstimate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# /analytics/leaderboard
+# ---------------------------------------------------------------------------
+
+
+class LeaderboardEntry(BaseModel):
+    """A single contributor's carbon impact summary."""
+
+    rank: int
+    author_name: str
+    pipeline_count: int
+    avg_sci_score: float
+    total_carbon_gco2e: float
+    deferred_count: int
+    deferred_percent: float  # 0–100
+    co2e_saved_gco2e: float
+
+
+class LeaderboardResponse(BaseModel):
+    """Top green contributors ranked by average SCI score (ascending)."""
+
+    period: str = "all-time"
+    entries: list[LeaderboardEntry] = Field(default_factory=list)
+    note: str = ""
+
+
+# ---------------------------------------------------------------------------
 # /pipeline/schedule  (scheduling recommendation endpoint)
 # ---------------------------------------------------------------------------
 
