@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     gitlab_webhook_secret: str = ""
 
     # Database
-    database_url: str = "postgresql://user:password@localhost:5432/greenpipe"
+    database_url: str = "postgresql+asyncpg://greenpipe:greenpipe@localhost:5432/greenpipe"
 
     # Carbon Aware SDK
     carbon_aware_sdk_url: str = "http://localhost:5073"
