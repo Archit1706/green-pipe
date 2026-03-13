@@ -205,7 +205,7 @@ class TestCodeAnalyzerAnalyzeDiff:
 
         result = await analyzer.analyze_diff(SAMPLE_DIFF)
         assert result.error is not None
-        assert "rate limit" in result.error.lower()
+        assert "claude api error" in result.error.lower()
         assert result.suggestions == []
 
     @pytest.mark.asyncio
