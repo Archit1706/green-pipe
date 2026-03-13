@@ -213,6 +213,7 @@ Supported commands (case-insensitive):
 | `@greenpipe schedule` | Show carbon-optimal execution windows |
 | `@greenpipe optimize` | Analyse MR code for energy efficiency (Claude AI) |
 | `@greenpipe regions` | Compare carbon intensity across multiple candidate regions |
+| `@greenpipe leaderboard` | Show top green contributors ranked by SCI score |
 | `@greenpipe defer` | Cancel the pipeline and reschedule to the best low-carbon window |
 | `@greenpipe run-now` | Override deferral — retry the pipeline immediately |
 | `@greenpipe confirm-defer` | Approve a pending deferral (approval-required mode) |
@@ -331,6 +332,7 @@ This enables discovery through GitLab's agent platform and provides structured t
 | `POST` | `/agent/tools/classify_urgency` | Agent tool: NLP urgency classification |
 | `POST` | `/agent/tools/analyze_code_efficiency` | Agent tool: Claude code profiler |
 | `POST` | `/agent/tools/compare_regions` | Agent tool: multi-region carbon comparison |
+| `GET`  | `/api/v1/analytics/leaderboard` | Top green contributors leaderboard |
 | `POST` | `/agent/webhooks/pipeline` | Pipeline completion webhook |
 | `POST` | `/agent/webhooks/mention` | @greenpipe mention webhook |
 
