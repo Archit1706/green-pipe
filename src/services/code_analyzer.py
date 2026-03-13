@@ -209,7 +209,7 @@ class CodeAnalyzer:
         except Exception as exc:
             logger.error("Claude API call failed: %s", exc, exc_info=True)
             return CodeAnalysisResult(
-                error=f"Claude API error: {exc}",
+                error="Claude API error. Check server logs for details.",
                 model_used=model,
             )
 
@@ -249,7 +249,7 @@ class CodeAnalyzer:
             logger.warning("Could not parse Claude response as JSON: %s", exc)
             return CodeAnalysisResult(
                 overall_assessment=raw_text[:500],
-                error=f"Failed to parse structured response: {exc}",
+                error="Failed to parse structured response. Check server logs.",
                 model_used=model,
                 tokens_used=tokens_used,
             )

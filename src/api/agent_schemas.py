@@ -25,6 +25,7 @@ class AnalyzePipelineInput(BaseModel):
     pipeline_id: int = Field(description="GitLab pipeline ID to analyze")
     runner_location: str | None = Field(
         default=None,
+        max_length=50,
         description="Runner region string (e.g. 'us-east1'). "
                     "Inferred from job data when omitted.",
     )
@@ -44,7 +45,7 @@ class GenerateSCIReportInput(BaseModel):
         description="MR IID to post the comment on. "
                     "Auto-discovered from the pipeline ref when omitted.",
     )
-    runner_location: str | None = None
+    runner_location: str | None = Field(default=None, max_length=50)
 
 
 class SuggestSchedulingInput(BaseModel):
@@ -52,6 +53,7 @@ class SuggestSchedulingInput(BaseModel):
 
     location: str = Field(
         default="us-east1",
+        max_length=50,
         description="Carbon Aware SDK location string (e.g. 'us-east1', 'westeurope')",
     )
     duration_minutes: int = Field(
