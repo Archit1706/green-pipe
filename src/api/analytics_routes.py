@@ -18,11 +18,13 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.analytics_schemas import (
     AnalyticsSummary,
+    LeaderboardEntry,
+    LeaderboardResponse,
     SavingsEstimate,
     SchedulingRecommendationResponse,
     TopConsumerEntry,
@@ -406,6 +408,102 @@ async def analytics_savings(
             potential_savings_gco2e=0.0,
             savings_percentage=0.0,
             assumed_reduction_pct=_ASSUMED_REDUCTION_PCT,
+            note=_DB_ERROR_NOTE,
+        )
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/leaderboard
+# ---------------------------------------------------------------------------
+
+
+@analytics_router.get(
+    "/analytics/leaderboard",
+    response_model=LeaderboardResponse,
+    summary="Top green contributors ranked by average SCI score",
+)
+async def analytics_leaderboard(
+    project_id: int | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=50),
+    days: int | None = Query(
+        default=None,
+        ge=1,
+        le=365,
+        description="Lookback window in days (omit for all-time)",
+    ),
+    session: AsyncSession = Depends(get_session),
+) -> LeaderboardResponse:
+    """
+    Return contributors ranked by average SCI score (ascending — lower is greener).
+
+    Each entry includes pipeline count, average SCI, deferred pipeline count,
+    and estimated CO₂e saved through deferrals.
+    """
+    period = f"last {days} days" if days else "all-time"
+    try:
+        base = select(PipelineRun).where(PipelineRun.author_name.isnot(None))
+        if project_id is not None:
+            base = base.where(PipelineRun.project_id == project_id)
+        if days is not None:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            base = base.where(PipelineRun.created_at >= cutoff)
+
+        sub = base.subquery()
+
+        stmt = (
+            select(
+                sub.c.author_name,
+                func.count().label("pipeline_count"),
+                func.avg(sub.c.sci_score).label("avg_sci"),
+                func.sum(sub.c.total_carbon_gco2).label("total_carbon"),
+                func.sum(
+                    func.cast(
+                        sub.c.urgency_classification == "deferrable",
+                        Integer,
+                    )
+                ).label("deferred_count"),
+            )
+            .group_by(sub.c.author_name)
+            .order_by(func.avg(sub.c.sci_score).asc())
+            .limit(limit)
+        )
+
+        result = await session.execute(stmt)
+        rows = result.all()
+
+        entries: list[LeaderboardEntry] = []
+        for rank, row in enumerate(rows, 1):
+            pipeline_count = int(row.pipeline_count)
+            deferred_count = int(row.deferred_count or 0)
+            total_carbon = float(row.total_carbon or 0)
+            deferred_pct = (
+                (deferred_count / pipeline_count * 100)
+                if pipeline_count > 0
+                else 0.0
+            )
+            co2e_saved = total_carbon * (deferred_pct / 100) * (_ASSUMED_REDUCTION_PCT / 100)
+
+            entries.append(
+                LeaderboardEntry(
+                    rank=rank,
+                    author_name=row.author_name,
+                    pipeline_count=pipeline_count,
+                    avg_sci_score=round(float(row.avg_sci or 0), 4),
+                    total_carbon_gco2e=round(total_carbon, 4),
+                    deferred_count=deferred_count,
+                    deferred_percent=round(deferred_pct, 1),
+                    co2e_saved_gco2e=round(co2e_saved, 4),
+                )
+            )
+
+        note = "" if entries else _EMPTY_NOTE
+        return LeaderboardResponse(period=period, entries=entries, note=note)
+
+    except Exception as exc:
+        logger.warning("analytics/leaderboard DB query failed: %s", exc)
+        return LeaderboardResponse(
+            period=period,
+            entries=[],
             note=_DB_ERROR_NOTE,
         )
 
