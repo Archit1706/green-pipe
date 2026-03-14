@@ -111,18 +111,24 @@ ls LICENSE 2>/dev/null || echo "MISSING — create MIT License file"
 
 ## 3. Code Quality & Security
 
-- [x] All 123 tests pass with zero external dependencies
-- [x] CORS is narrowed to `allow_methods=["GET", "POST"]`, `allow_headers=["Content-Type", "Authorization"]`
+- [x] All 299 tests pass with zero external dependencies
+- [x] CORS is narrowed to `allow_methods=["GET", "POST"]`, `allow_headers=["Content-Type", "Authorization", "X-Gitlab-Token"]`
 - [x] Security TODOs in `src/main.py` module docstring are documented (CORS wildcard, auth, rate-limiting, HTTPS)
 - [x] Webhook secret verification enabled when `GITLAB_WEBHOOK_SECRET` is set
+- [x] Timing-safe webhook HMAC comparison (`hmac.compare_digest`)
 - [x] No hardcoded credentials or tokens in any source file
 - [x] `.env` is gitignored (`.env.example` committed, `.env` is not)
 - [x] Database connection strings never appear in logs
+- [x] Exception detail scrubbing — no internal errors leaked to clients or MR comments
+- [x] Markdown injection prevention via `_sanitize_md()` in all MR comments
+- [x] Input validation: `diff_text` 500KB, `location`/`runner_location` 50 chars via Pydantic
+- [x] Bounded `_IntensityCache` (max 256 entries with eviction)
+- [x] Unused imports removed (`asyncio`, `lru_cache`, `date`, `Any`)
 
 **Verify:**
 ```bash
 pytest tests/ -v --tb=short
-# Expected: 123 passed, 0 failed
+# Expected: 299 passed, 0 failed
 
 grep -r "GITLAB_TOKEN\|GITLAB_WEBHOOK_SECRET\|DATABASE_URL" src/ --include="*.py" | grep -v "settings\.\|os\.environ\|os\.getenv\|\.env\|example\|#"
 # Expected: no results (no hardcoded secrets)
@@ -181,7 +187,7 @@ Run these in order on the final day:
 ```bash
 # 1. Run full test suite
 pytest tests/ -v
-# Expected: 123 passed
+# Expected: 299 passed
 
 # 2. Verify the API starts cleanly
 uvicorn src.main:app --host 0.0.0.0 --port 8000 &
@@ -216,6 +222,8 @@ kill %1
 
 | Prize | Criteria | Status |
 |-------|----------|--------|
-| **Green Agent ($3,000)** | First GitLab-native GSF SCI implementation, measurable carbon reduction, standards-based | ✅ Complete |
-| **Sustainable Design ($500)** | Quantized NLP model, agent's own carbon measured, efficient architecture | ✅ Complete |
-| **Most Impactful ($5,000)** | Broad applicability (all GitLab projects), real problem (CI/CD carbon blindness), standards-based ecosystem contribution | ✅ Case made |
+| **Green Agent ($3,000)** | First GitLab-native GSF SCI implementation, autonomous deferral, measurable carbon reduction | ✅ Complete |
+| **Sustainable Design ($500)** | Quantized NLP model, agent's own carbon measured, efficient architecture, security hardened | ✅ Complete |
+| **Anthropic Category ($10,000)** | Claude-powered code profiling via `@greenpipe optimize` | ✅ Complete |
+| **Easiest to Use ($5,000)** | One-click CI template, compact MR UX, 11 mention commands, leaderboard gamification | ✅ Complete |
+| **Most Impactful ($5,000)** | Broad applicability, multi-region comparison, contributor leaderboard, demonstrated savings | ✅ Case made |

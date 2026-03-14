@@ -2,7 +2,7 @@
 
 > **Hackathon:** GitLab AI Hackathon 2026
 > **Deadline:** March 25, 2026 @ 1:00 PM CDT
-> **Category:** Green Agent Prize + Sustainable Design Bonus
+> **Category:** Green Agent Prize + Sustainable Design Bonus + Anthropic Category
 
 Copy the sections below into the Devpost submission form.
 
@@ -17,7 +17,7 @@ GreenPipe: GSF-Compliant Carbon-Aware CI/CD Agent for GitLab
 ## Tagline (one line)
 
 ```
-First GitLab Duo Agent implementing GSF standards (SCI ISO/IEC 21031:2024, Carbon Aware SDK, Impact Framework) with AI-powered urgency classification.
+First GitLab Duo Agent implementing GSF standards (SCI ISO/IEC 21031:2024, Carbon Aware SDK, Impact Framework) with autonomous pipeline deferral, Claude-powered code profiling, and AI-driven urgency classification.
 ```
 
 ---
@@ -50,11 +50,35 @@ GreenPipe is a GitLab Duo Agent that monitors every CI/CD pipeline automatically
 - INT8 dynamic quantization reduces model energy use by 58% compared to full-precision FP32
 - Keyword-based fallback ensures reliability when the ML model is absent
 
-**3. Automates What Others Measure Manually**
+**3. Takes Autonomous Action (Not Just Reports)**
+
+- **Auto-deferral engine** with 3 safe modes: `recommend-only`, `approval-required`, `auto-execute`
+- Cancels deferrable pipelines and reschedules to low-carbon windows via GitLab Pipeline Schedules
+- Policy guardrails: protected branches, minimum savings thresholds, max delay hours
+- Full audit trail via `DeferralAuditRecord` database table
+
+**4. Profiles Code for Energy Efficiency (Anthropic Claude)**
+
+- `@greenpipe optimize` analyses MR diffs for energy inefficiencies using Claude
+- Identifies N+1 queries, missing caching, unbounded loops, sync I/O patterns
+- Returns structured suggestions with estimated energy impact per issue
+
+**5. Multi-Region Carbon Comparison**
+
+- `@greenpipe regions` compares carbon intensity across runner locations simultaneously
+- Ranks regions by optimal window + carbon savings, with policy-filtered allowed regions
+
+**6. Gamified Contributor Impact**
+
+- `@greenpipe leaderboard` shows carbon-efficiency rankings per contributor
+- Tracks avg SCI score, deferred pipeline count, and CO₂e saved per developer
+- Ranked by lowest average SCI score with gamification UX (rank icons, motivational footer)
+
+**7. Automates What Others Measure Manually**
 
 - Pipeline completion webhook triggers automatic SCI analysis and MR comment on every run
-- `@greenpipe analyze`, `@greenpipe schedule`, `@greenpipe help` respond to on-demand requests in MR comments
-- Historical analytics track CO₂e trends, top consumers, and potential savings over time
+- 11 on-demand `@greenpipe` commands in MR comments
+- Historical analytics track CO₂e trends, top consumers, savings, and leaderboard over time
 - Zero developer action required — install once via GitLab webhook, then it runs forever
 
 ---
@@ -83,16 +107,31 @@ GreenPipe is a GitLab Duo Agent that monitors every CI/CD pipeline automatically
 - httpx client for GSF Carbon Aware SDK with 1-hour TTL cache (97% API call reduction)
 - python-gitlab wrapper with lazy import for zero-cost startup when token is absent
 
+**Anthropic Claude Integration:**
+
+- Claude-powered code efficiency profiler (`src/services/code_analyzer.py`)
+- Structured JSON output with line ranges, issue types, energy impact ratings, and suggested fixes
+- Hybrid AI architecture: tiny INT8 DistilBERT for fast urgency routing + Claude for deep code analysis
+
 **GitLab Duo Agent:**
 
 - `AGENTS.md` agent manifest per GitLab Duo Agent Platform specification
-- Four agent tool endpoints: `analyze_pipeline`, `generate_sci_report`, `suggest_scheduling`, `classify_urgency`
-- Two webhook endpoints: pipeline completion trigger + `@greenpipe` mention handler
-- Webhook HMAC token verification via `X-Gitlab-Token` header
+- `.gitlab/agents/greenpipe/config.yaml` — Duo Agent Platform registration
+- `templates/greenpipe-ci.yml` — one-click CI/CD component template
+- Six agent tool endpoints: `analyze_pipeline`, `generate_sci_report`, `suggest_scheduling`, `classify_urgency`, `analyze_code_efficiency`, `compare_regions`
+- Two webhook endpoints: pipeline completion trigger + `@greenpipe` mention handler (11 commands)
+- Webhook HMAC token verification via `X-Gitlab-Token` header with timing-safe comparison
+
+**Security Hardening:**
+
+- Input validation: Pydantic `max_length` on all user-facing string fields, 500KB diff limit
+- Markdown injection prevention via `_sanitize_md()` in all MR comments
+- Exception detail scrubbing — no internal errors leaked to clients
+- Bounded carbon intensity cache (max 256 entries with eviction)
 
 **Test Suite:**
 
-- 123 tests, zero external dependencies (no live GitLab, no database, no Carbon Aware SDK required)
+- 299 tests across 11 test files, zero external dependencies
 - DB-unavailable graceful fallback tested explicitly in analytics test suite
 
 ---
@@ -112,11 +151,16 @@ GreenPipe is a GitLab Duo Agent that monitors every CI/CD pipeline automatically
 ## Accomplishments
 
 - **First GitLab-native implementation of the GSF SCI standard (ISO/IEC 21031:2024)**
+- **Autonomous pipeline deferral** — closed-loop agent that cancels + reschedules deferrable pipelines
+- **Claude-powered code profiling** — AI-driven energy efficiency analysis of MR diffs
+- **Multi-region carbon comparison** — parallel async queries across 5+ regions to find greenest runner
+- **Contributor leaderboard** — gamified carbon-efficiency rankings driving developer engagement
 - Energy estimates within **±15% of ECO-CI published benchmarks** across representative runner types
 - Agent response time **under 2 seconds** per pipeline analysis (keyword fallback mode)
 - INT8 quantized NLP model: **58% less energy** than full-precision FP32 equivalent
-- **123 passing tests**, zero external dependencies required to run the test suite
+- **299 passing tests** across 11 test files, zero external dependencies required
 - **35% of demo pipelines** classified as deferrable → estimated **22% carbon reduction** if scheduled to Carbon Aware SDK windows
+- **Security hardened**: input validation, markdown sanitization, exception scrubbing, timing-safe HMAC
 - GSF contribution materials prepared: Green Software Pattern proposal, Impact Framework plugin spec, community case study
 
 ---
@@ -155,7 +199,7 @@ GreenPipe is a GitLab Duo Agent that monitors every CI/CD pipeline automatically
 ```
 GitLab Duo Agent Platform · GSF Carbon Aware SDK · GSF Impact Framework
 ISO/IEC 21031:2024 (SCI) · ECO-CI SPECpower approach
-DistilBERT (Hugging Face Transformers) · PyTorch INT8 Quantization
+Anthropic Claude API · DistilBERT (Hugging Face Transformers) · PyTorch INT8 Quantization
 FastAPI · SQLAlchemy 2.x (async) · PostgreSQL · asyncpg
 httpx · python-gitlab · Pydantic · Alembic · pytest
 ```
@@ -170,6 +214,7 @@ Software Carbon Intensity (SCI)
 GSF Carbon Aware SDK
 GSF Impact Framework
 GitLab Duo Agent
+Anthropic Claude
 DistilBERT
 FastAPI
 PostgreSQL

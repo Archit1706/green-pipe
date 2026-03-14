@@ -19,7 +19,7 @@ Before recording, ensure the following are ready:
 
 ---
 
-## Demo Scenarios (4 scenarios, ~8 minutes total live + narration)
+## Demo Scenarios (7 scenarios, ~12 minutes total live + narration)
 
 ---
 
@@ -175,6 +175,64 @@ curl -s -X POST http://localhost:8000/agent/tools/generate_sci_report \
 
 ---
 
+### Scenario 5 — Multi-Region Comparison: "Find the Greenest Runner Location"
+
+**Goal:** Show GreenPipe comparing carbon intensity across multiple regions simultaneously.
+
+**Talking points:**
+- Current scheduling finds the best *time* — multi-region finds the best *location + time*.
+- Parallel async queries to the Carbon Aware SDK for 5 candidate regions.
+- Policy-filtered by `GREENPIPE_ALLOWED_REGIONS`.
+
+**Command:**
+```bash
+curl -s -X POST http://localhost:8000/agent/tools/compare_regions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "locations": ["us-east1", "us-west1", "europe-west1", "asia-southeast1"],
+    "duration_minutes": 15
+  }' | python -m json.tool
+```
+
+**Narrate:** "GreenPipe queries all four regions in parallel. Europe-west1 has the lowest intensity right now. But if you can wait 3 hours, us-west1 drops even lower. GreenPipe ranks every option so you get the best tradeoff between carbon savings and delay."
+
+---
+
+### Scenario 6 — Code Efficiency Profiling: "Claude Finds Green Code Issues"
+
+**Goal:** Show the Anthropic Claude integration analysing code for energy inefficiencies.
+
+**Talking points:**
+- `@greenpipe optimize` sends the MR diff to Claude for green software analysis.
+- Returns structured suggestions: N+1 queries, missing caching, sync I/O, etc.
+- Hybrid AI: tiny DistilBERT for fast urgency routing, Claude for deep code analysis.
+
+**Command:**
+```bash
+curl -s -X POST http://localhost:8000/agent/tools/analyze_code_efficiency \
+  -H "Content-Type: application/json" \
+  -d '{
+    "diff_text": "def get_users():\n    users = User.query.all()\n    for user in users:\n        print(user.orders.count())\n    return users"
+  }' | python -m json.tool
+```
+
+**Narrate:** "Claude spotted an N+1 query pattern — loading all users then querying orders one by one. It suggests eager loading, which could reduce database energy by 10-30%. This is the kind of code-level insight that complements pipeline-level SCI measurement."
+
+---
+
+### Scenario 7 — Leaderboard: "Gamified Carbon-Efficiency Rankings"
+
+**Goal:** Show the contributor leaderboard that makes sustainability competitive.
+
+**Command:**
+```bash
+curl -s "http://localhost:8000/api/v1/analytics/leaderboard?limit=5" | python -m json.tool
+```
+
+**Narrate:** "GreenPipe tracks every contributor's average SCI score, how many pipelines they deferred, and total CO₂e saved. The leaderboard makes carbon efficiency visible and competitive — developers can see their rank and strive to improve."
+
+---
+
 ### Bonus: Analytics Dashboard
 
 Show the historical analytics endpoint:
@@ -200,7 +258,7 @@ curl -s "http://localhost:8000/api/v1/analytics/savings" | python -m json.tool
 
 ### [0:20 – 0:45] The Solution
 
-> "GreenPipe is a GitLab Duo Agent that brings GSF standards natively into every CI/CD pipeline. It measures. It classifies. It recommends. Automatically, on every pipeline run, with zero developer action."
+> "GreenPipe is a GitLab Duo Agent that brings GSF standards natively into every CI/CD pipeline. It measures. It classifies. It acts — autonomously rescheduling deferrable pipelines, profiling code for energy waste with Claude, and ranking contributors on a carbon leaderboard. All automatic, zero developer action."
 
 *[Screen: show GreenPipe MR comment appearing automatically after pipeline completion]*
 
@@ -238,11 +296,23 @@ curl -s "http://localhost:8000/api/v1/analytics/savings" | python -m json.tool
 
 ---
 
-### [2:10 – 2:30] Impact & Future
+### [2:10 – 2:40] Autonomous Action + Claude Integration
 
-> "In our hackathon demo: 35% of pipelines were deferrable. If they'd been scheduled to the Carbon Aware SDK's recommended windows, we'd have saved an estimated 22% of total pipeline carbon. At scale — across all GitLab projects — that's thousands of tonnes of CO₂e annually."
+> "But GreenPipe doesn't just measure — it acts. When it detects a deferrable pipeline running on a high-carbon grid, it can autonomously cancel and reschedule to a greener window. Three safe modes: recommend-only, approval-required, or fully automatic."
 
-> "We're preparing to contribute to the Green Software Foundation ecosystem: a Green Software Pattern proposal, a GitLab runner plugin for the Impact Framework, and a case study as the first GitLab-native SCI implementation."
+*[Screen: show auto-deferral MR comment with savings %]*
+
+> "And with `@greenpipe optimize`, developers get Claude-powered code profiling — identifying N+1 queries, missing caching, and sync I/O patterns that waste energy."
+
+*[Screen: show code efficiency analysis output]*
+
+---
+
+### [2:40 – 3:00] Impact & Future
+
+> "In our hackathon demo: 35% of pipelines were deferrable. GreenPipe's leaderboard makes carbon efficiency competitive — developers see their rank and strive to improve. Multi-region comparison finds the greenest runner location across 5+ regions simultaneously."
+
+> "299 tests. 6 agent tools. 11 mention commands. Security hardened. All built on Green Software Foundation standards."
 
 > "GreenPipe: the first GitLab agent where every pipeline run is a step toward net zero."
 
@@ -252,10 +322,12 @@ curl -s "http://localhost:8000/api/v1/analytics/savings" | python -m json.tool
 
 ## Screenshot Targets for Devpost
 
-Capture these five screenshots for submission images:
+Capture these seven screenshots for submission images:
 
 1. **SCI breakdown** — the JSON response from `POST /api/v1/pipeline/analyze` with sci_score, energy, carbon_intensity, methodology fields highlighted
 2. **Carbon Aware SDK integration** — the `/api/v1/pipeline/schedule` response showing best_window and savings_percent
 3. **Impact Framework methodology** — the `/api/v1/standards/info` endpoint listing all three GSF standards
 4. **Architecture diagram** — the ASCII art from README.md rendered in a code block
 5. **MR comment** — the GitLab-formatted markdown report generated by `format_mr_comment()` (rendered in a markdown preview or actual GitLab MR)
+6. **Multi-region comparison** — the `compare_regions` response showing ranked regions with carbon savings
+7. **Leaderboard** — the contributor rankings table with rank icons and gamification UX
