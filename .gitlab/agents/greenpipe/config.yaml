@@ -50,6 +50,13 @@ agent:
       url: ${GREENPIPE_API_URL}/agent/tools/analyze_code_efficiency
       method: POST
 
+    - name: compare_regions
+      description: >-
+        Compare carbon intensity across multiple runner regions simultaneously.
+        Returns ranked list with optimal windows and estimated carbon savings.
+      url: ${GREENPIPE_API_URL}/agent/tools/compare_regions
+      method: POST
+
   # Webhook triggers
   triggers:
     - event: pipeline
@@ -61,7 +68,7 @@ agent:
     - event: note
       description: >-
         Respond to @greenpipe mentions in MR comments. Supports commands:
-        analyze, report, schedule, optimize, defer, run-now, confirm-defer, why, help.
+        analyze, report, schedule, optimize, regions, leaderboard, defer, run-now, confirm-defer, why, help.
       url: ${GREENPIPE_API_URL}/agent/webhooks/mention
 
   # Required environment variables

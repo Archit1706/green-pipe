@@ -133,20 +133,50 @@ still gets a useful (though less precise) SCI estimate rather than an error.
 
 ---
 
-## 8. Efficient Architecture — No Wasted Compute
+## 8. Parallel Async Queries for Multi-Region Comparison
+
+The `compare_regions()` function queries carbon intensity for multiple runner
+locations using `asyncio.gather()` with concurrent HTTP calls.  Instead of
+sequential requests (N × RTT), all regions are queried in parallel (~1 × RTT),
+reducing both wall-clock time and connection overhead.
+
+---
+
+## 9. Bounded Cache with Eviction
+
+The carbon intensity cache (`_IntensityCache`) is bounded to a maximum of 256
+entries.  When the limit is reached, the oldest entries are evicted.  This
+prevents unbounded memory growth in long-running deployments processing many
+distinct regions over time.
+
+---
+
+## 10. Efficient Leaderboard Query
+
+The leaderboard endpoint uses a single SQL query with `GROUP BY author_name`,
+`func.avg()`, and `func.count()` — computing all contributor metrics in one
+database round-trip rather than N+1 queries per contributor.  This aligns with
+the same efficiency pattern GreenPipe recommends via its Claude code profiler.
+
+---
+
+## 11. Efficient Architecture — No Wasted Compute
 
 | Design choice | Carbon benefit |
 | ------------- | -------------- |
 | Single FastAPI process (not multi-container) | Halves idle CPU overhead |
 | Shared service singletons (`_carbon_service`, `_analyzer`) | One cache shared across all requests |
 | DB-optional mode (offline analysis via `/analyze` with `jobs`) | Runs without PostgreSQL → no DB server energy |
-| IN8 quantised NLP model | 58% energy reduction per inference |
-| Carbon intensity cache (1 h TTL) | 97% reduction in outbound API calls |
+| INT8 quantised NLP model | 58% energy reduction per inference |
+| Carbon intensity cache (1 h TTL, 256-entry bound) | 97% reduction in outbound API calls |
 | Keyword fallback for urgency | 0 ML inference energy when model absent |
+| Parallel async region queries | Multi-region in ~1 RTT instead of N × RTT |
+| Single-query leaderboard | All contributor metrics in one DB round-trip |
+| Input sanitization at boundary | Prevents injection without runtime overhead |
 
 ---
 
-## 9. "Practices What It Preaches" Narrative
+## 12. "Practices What It Preaches" Narrative
 
 GreenPipe implements every optimisation it recommends to its users:
 
@@ -163,7 +193,7 @@ GreenPipe implements every optimisation it recommends to its users:
 
 ---
 
-## 10. Future Improvements
+## 13. Future Improvements
 
 | Improvement | Estimated impact |
 | ----------- | ---------------- |
