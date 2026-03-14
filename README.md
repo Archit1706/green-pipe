@@ -5,7 +5,7 @@
 > The first GitLab Duo Agent implementing GSF standards (SCI, Carbon Aware SDK,
 > Impact Framework) with AI-powered urgency classification and carbon-aware scheduling.
 
-[![Tests](https://img.shields.io/badge/tests-123%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-299%20passing-brightgreen)](tests/)
 [![GSF SCI](https://img.shields.io/badge/GSF-SCI%20ISO%2FIEC%2021031%3A2024-blue)](https://sci.greensoftware.foundation/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -17,8 +17,11 @@ GreenPipe is a **GitLab Duo Agent** that:
 
 1. **Measures** the carbon footprint of every CI/CD pipeline using GSF SCI methodology
 2. **Classifies** pipeline urgency from commit messages via fine-tuned DistilBERT NLP
-3. **Recommends** carbon-optimal scheduling windows using the GSF Carbon Aware SDK
-4. **Reports** automatically as GitLab MR comments after every pipeline completion
+3. **Autonomously reschedules** deferrable pipelines to low-carbon windows (3 safe modes)
+4. **Profiles code** for energy inefficiencies using Anthropic Claude
+5. **Compares regions** to find the greenest runner location + time window
+6. **Gamifies sustainability** with a contributor carbon leaderboard
+7. **Reports** automatically as GitLab MR comments after every pipeline completion
 
 ---
 
@@ -39,8 +42,9 @@ GreenPipe is a **GitLab Duo Agent** that:
 ┌──────────────────────────────────────────────────────────┐
 │  GitLab Duo Agent (GreenPipe)                            │
 │  - Pipeline completion webhook  → auto-analyse + report  │
-│  - @greenpipe mention handler   → on-demand commands     │
+│  - @greenpipe mention handler   → 10 on-demand commands  │
 │  - DistilBERT NLP classifier    → urgency classification │
+│  - Auto-deferral engine         → 3 safe modes           │
 └──────────────────────────────────────────────────────────┘
                         ↓ calls
 ┌──────────────────────────────────────────────────────────┐
@@ -48,8 +52,9 @@ GreenPipe is a **GitLab Duo Agent** that:
 │  - Pipeline analyzer orchestrator                        │
 │  - SCI calculator  (ISO/IEC 21031:2024)                  │
 │  - Energy estimator (GSF Impact Framework Teads curve)   │
-│  - Carbon service  (GSF Carbon Aware SDK)                │
-│  - Analytics engine (historical CO₂e trends)             │
+│  - Carbon service  (GSF Carbon Aware SDK + multi-region) │
+│  - Code analyzer   (Anthropic Claude green profiler)     │
+│  - Analytics engine (historical CO₂e trends + leaderboard)│
 └──────────────────────────────────────────────────────────┘
                         ↓ uses
 ┌──────────────────────────────────────────────────────────┐
@@ -58,6 +63,7 @@ GreenPipe is a **GitLab Duo Agent** that:
 │  - SCI Spec          (ISO/IEC 21031:2024)                │
 │  - Impact Framework  (Teads curve energy methodology)    │
 │  - ECO-CI approach   (SPECpower runner TDP mapping)      │
+│  - Anthropic Claude  (code efficiency analysis)          │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -85,7 +91,7 @@ uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
 # 6. Tests
 pytest tests/ -v
-# → 123 passed
+# → 299 passed
 ```
 
 Interactive API docs: `http://localhost:8000/docs`
@@ -103,7 +109,22 @@ Configure two webhooks in **GitLab → Settings → Webhooks**:
 
 Once configured, GreenPipe will:
 - Auto-post an SCI carbon report on every completed pipeline
-- Respond to `@greenpipe analyze`, `@greenpipe schedule`, `@greenpipe help` in MR comments
+- Evaluate auto-deferral policy and reschedule deferrable pipelines
+- Respond to `@greenpipe` commands in MR comments:
+
+| Command | Effect |
+| ------- | ------ |
+| `@greenpipe analyze` | Analyse pipeline and post SCI report |
+| `@greenpipe report` | Generate SCI report for the MR |
+| `@greenpipe schedule` | Find lowest-carbon execution window |
+| `@greenpipe optimize` | Analyse MR code diff for energy inefficiencies (Claude) |
+| `@greenpipe regions` | Compare carbon intensity across runner regions |
+| `@greenpipe leaderboard` | Show contributor carbon-efficiency rankings |
+| `@greenpipe defer` | Defer pipeline to optimal low-carbon window |
+| `@greenpipe run-now` | Override deferral — run immediately |
+| `@greenpipe confirm-defer` | Confirm a pending deferral (approval-required mode) |
+| `@greenpipe why` | Explain urgency classification decision |
+| `@greenpipe help` | List all available commands |
 
 See [`AGENTS.md`](AGENTS.md) for the full agent specification.
 
@@ -130,6 +151,7 @@ See [`AGENTS.md`](AGENTS.md) for the full agent specification.
 | `GET`  | `/api/v1/analytics/trends` | SCI trend grouped by day (up to 365 days) |
 | `GET`  | `/api/v1/analytics/top-consumers` | Highest-carbon pipeline runs |
 | `GET`  | `/api/v1/analytics/savings` | Estimated CO₂e savings from deferral |
+| `GET`  | `/api/v1/analytics/leaderboard` | Contributor carbon-efficiency rankings |
 
 ### Agent Tools
 
@@ -139,6 +161,8 @@ See [`AGENTS.md`](AGENTS.md) for the full agent specification.
 | `POST` | `/agent/tools/generate_sci_report` | Generate + optionally post MR comment |
 | `POST` | `/agent/tools/suggest_scheduling` | Best low-carbon execution window |
 | `POST` | `/agent/tools/classify_urgency` | NLP urgency classification |
+| `POST` | `/agent/tools/analyze_code_efficiency` | Claude-powered green code profiling |
+| `POST` | `/agent/tools/compare_regions` | Multi-region carbon intensity comparison |
 
 ### Webhooks
 
@@ -283,8 +307,9 @@ green-pipe/
 │   ├── calculators/
 │   │   └── sci_calculator.py   # ISO/IEC 21031:2024 SCI formula
 │   ├── services/
-│   │   ├── carbon_service.py   # GSF Carbon Aware SDK + regional fallback
-│   │   ├── gitlab_client.py    # python-gitlab wrapper (lazy import)
+│   │   ├── carbon_service.py   # GSF Carbon Aware SDK + regional fallback + compare_regions()
+│   │   ├── code_analyzer.py    # Anthropic Claude green code profiler
+│   │   ├── gitlab_client.py    # python-gitlab wrapper (lazy import, 8 methods)
 │   │   └── pipeline_analyzer.py # Orchestrator
 │   ├── nlp/
 │   │   ├── classifier.py       # UrgencyClassifier (INT8 + keyword fallback)
@@ -293,13 +318,17 @@ green-pipe/
 │   │   └── quantize.py         # INT8 dynamic quantization
 │   └── api/
 │       ├── routes.py           # Core pipeline endpoints
-│       ├── agent_routes.py     # Agent tools + webhooks
-│       ├── analytics_routes.py # Historical analytics + schedule
-│       ├── report_formatter.py # GitLab MR markdown comment generator
+│       ├── agent_routes.py     # Agent tools + webhooks (6 tools + 2 webhooks)
+│       ├── analytics_routes.py # Historical analytics + schedule + leaderboard
+│       ├── report_formatter.py # MR comment generator + deferral + code + regions + leaderboard
 │       ├── schemas.py          # Core Pydantic schemas
 │       ├── agent_schemas.py    # Agent tool schemas
 │       └── analytics_schemas.py # Analytics response schemas
-├── tests/                      # 123 tests, zero external dependencies
+├── .gitlab/agents/greenpipe/
+│   └── config.yaml             # GitLab Duo Agent Platform registration
+├── templates/
+│   └── greenpipe-ci.yml        # One-click CI/CD component template
+├── tests/                      # 299 tests, zero external dependencies
 ├── data/
 │   └── commit_messages.csv     # 256 labeled training examples
 ├── docs/
@@ -330,6 +359,19 @@ DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/greenpipe
 # GSF Carbon Aware SDK
 CARBON_AWARE_SDK_URL=http://localhost:5073
 
+# Anthropic Claude (optional — enables @greenpipe optimize code profiling)
+ANTHROPIC_API_KEY=<anthropic-api-key>
+
+# Auto-Deferral Policy
+GREENPIPE_DEFER_MODE=recommend-only    # recommend-only | approval-required | auto-execute
+GREENPIPE_MIN_SAVINGS_PCT=20           # Minimum carbon savings % to trigger deferral
+GREENPIPE_MAX_DELAY_HOURS=24           # Maximum hours a pipeline can be deferred
+GREENPIPE_PROTECTED_BRANCHES=main,master,release*  # Never defer these branches
+GREENPIPE_PROTECTED_ENVS=production,staging         # Never defer these environments
+
+# Multi-Region Comparison
+GREENPIPE_ALLOWED_REGIONS=us-east1,us-west1,europe-west1,asia-southeast1,australia-southeast1
+
 # Application
 APP_ENV=development   # Set to "production" to disable auto-table creation
 LOG_LEVEL=INFO
@@ -346,6 +388,9 @@ GreenPipe applies the same optimisations it recommends to its users:
 - **Keyword fallback** — zero ML inference cost when model absent
 - **Async I/O** — single process handles concurrent requests efficiently
 - **Lazy imports** — ML model not loaded until first inference request
+- **Parallel async region queries** — multi-region comparison with concurrent HTTP calls
+- **Bounded intensity cache** — max 256 entries with eviction to prevent memory leaks
+- **Input sanitization** — markdown injection prevention in all MR comments
 
 See [`docs/SUSTAINABLE_DESIGN.md`](docs/SUSTAINABLE_DESIGN.md) for full details including
 GreenPipe's own SCI score (~0.00079 gCO₂e per pipeline analysis).
