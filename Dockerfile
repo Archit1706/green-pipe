@@ -7,10 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies first (cached layer)
-COPY pyproject.toml ./
-COPY src/__init__.py src/__init__.py
-RUN pip install --no-cache-dir .
+# Install production dependencies (no torch/transformers — keyword fallback is active)
+COPY requirements-prod.txt ./
+RUN pip install --no-cache-dir -r requirements-prod.txt
 
 # Copy full source
 COPY . .
