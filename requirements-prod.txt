@@ -13,3 +13,4 @@ anyio>=4.7.0
 cachetools>=5.5.0
 python-dotenv>=1.0.0
 rich>=13.9.0
+numpy>=1.26.0
