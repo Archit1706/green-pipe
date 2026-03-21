@@ -46,12 +46,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(fastapi_app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
     """Application lifespan: startup → yield → shutdown."""
     logger.info("GreenPipe starting up (env=%s)", settings.app_env)
-    if settings.app_env == "development":
-        try:
-            await create_tables()
-            logger.info("Database tables ensured.")
-        except Exception as exc:
-            logger.warning("Could not create DB tables (no DB configured?): %s", exc)
+    try:
+        await create_tables()
+        logger.info("Database tables ensured.")
+    except Exception as exc:
+        logger.warning("Could not create DB tables (no DB configured?): %s", exc)
     yield
     logger.info("GreenPipe shutting down.")
 

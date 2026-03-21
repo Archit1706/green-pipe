@@ -16,4 +16,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "alembic upgrade head || echo 'Migration skipped'; uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "alembic upgrade head && echo 'Migrations OK' || echo 'Migration skipped (will retry via create_tables)'; exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
