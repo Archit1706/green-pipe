@@ -1,13 +1,15 @@
 """
 Carbon intensity service for GreenPipe.
 
-Fetches real-time and forecast carbon intensity data from the
-GSF Carbon Aware SDK REST API.
+Fetches real-time carbon intensity data with a three-tier fallback:
+  1. GSF Carbon Aware SDK REST API (self-hosted)
+  2. Electricity Maps Free API (real-time, free tier — 100 req/month)
+  3. Regional average fallback (IEA / ElectricityMaps 2024 data)
 
 References:
 - Carbon Aware SDK: https://github.com/Green-Software-Foundation/carbon-aware-sdk
 - SDK WebAPI docs: https://carbon-aware-sdk.greensoftware.foundation/
-- Electricity Maps (fallback): https://electricitymaps.com/
+- Electricity Maps API: https://docs.electricitymaps.com/
 """
 
 from __future__ import annotations
@@ -75,6 +77,27 @@ REGIONAL_FALLBACK_INTENSITIES: dict[str, float] = {
     "eastasia": 500.0,
     "japaneast": 490.0,
     "southeastasia": 510.0,
+}
+
+
+# ---------------------------------------------------------------------------
+# SDK location → Electricity Maps zone mapping
+# ---------------------------------------------------------------------------
+# Electricity Maps uses its own zone codes (e.g. "US-MIDA-PJM" for eastus).
+# See: https://app.electricitymaps.com/zone/
+SDK_TO_EMAPS_ZONE: dict[str, str] = {
+    "eastus": "US-MIDA-PJM",
+    "eastus2": "US-MIDA-PJM",
+    "centralus": "US-MIDW-MISO",
+    "westus": "US-CAL-CISO",
+    "westus2": "US-NW-PACW",
+    "westeurope": "NL",
+    "northeurope": "IE",
+    "germanywestcentral": "DE",
+    "eastasia": "HK",
+    "japaneast": "JP-TK",
+    "southeastasia": "SG",
+    "australiaeast": "AU-NSW",
 }
 
 
@@ -244,6 +267,80 @@ class CarbonAwareSDKClient:
 
 
 # ---------------------------------------------------------------------------
+# Electricity Maps Free API client
+# ---------------------------------------------------------------------------
+
+
+class ElectricityMapsClient:
+    """
+    Lightweight client for the Electricity Maps free-tier API.
+
+    Free tier: 100 requests/month, real-time carbon intensity.
+    Docs: https://docs.electricitymaps.com/
+    """
+
+    BASE_URL = "https://api.electricitymap.org/v3"
+
+    def __init__(self, api_key: str = "") -> None:
+        self._api_key = api_key or settings.electricity_maps_api_key
+        self._client: httpx.AsyncClient | None = None
+
+    @property
+    def available(self) -> bool:
+        return bool(self._api_key)
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=self.BASE_URL,
+                timeout=10.0,
+                headers={
+                    "auth-token": self._api_key,
+                    "Accept": "application/json",
+                },
+            )
+        return self._client
+
+    async def get_current_intensity(self, sdk_location: str) -> float | None:
+        """
+        Fetch real-time carbon intensity for an SDK location.
+
+        Returns gCO₂eq/kWh or None on failure.
+        """
+        if not self.available:
+            return None
+
+        zone = SDK_TO_EMAPS_ZONE.get(sdk_location)
+        if not zone:
+            logger.debug("No Electricity Maps zone mapping for '%s'", sdk_location)
+            return None
+
+        client = await self._get_client()
+        try:
+            resp = await client.get(
+                "/carbon-intensity/latest",
+                params={"zone": zone},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            intensity = data.get("carbonIntensity")
+            if intensity is not None and 0 < float(intensity) < 10_000:
+                logger.info(
+                    "Electricity Maps live intensity for %s (%s): %.1f gCO₂e/kWh",
+                    sdk_location, zone, float(intensity),
+                )
+                return float(intensity)
+            return None
+        except Exception as exc:
+            logger.warning("Electricity Maps request failed for zone '%s': %s", zone, exc)
+            return None
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+
+
+# ---------------------------------------------------------------------------
 # In-memory cache (simple TTL cache keyed by location + hour)
 # ---------------------------------------------------------------------------
 
@@ -294,6 +391,7 @@ class CarbonService:
 
     def __init__(self, sdk_url: str | None = None) -> None:
         self._sdk = CarbonAwareSDKClient(sdk_url)
+        self._emaps = ElectricityMapsClient()
         self._cache = _IntensityCache(ttl_seconds=3600)
 
     def resolve_location(self, runner_region: str | None) -> str:
@@ -320,6 +418,7 @@ class CarbonService:
             if cached is not None:
                 return cached, "cache"
 
+        # --- Tier 1: GSF Carbon Aware SDK ---
         data = await self._sdk.get_current_intensity(sdk_location)
         if data:
             # SDK response schema: {"rating": float, "location": str, ...}
@@ -336,12 +435,18 @@ class CarbonService:
             if rating != 0:
                 logger.warning(
                     "Carbon Aware SDK returned out-of-range intensity %.4f for '%s'; "
-                    "falling back to regional average.",
+                    "trying Electricity Maps.",
                     rating,
                     sdk_location,
                 )
 
-        # Fallback to regional average
+        # --- Tier 2: Electricity Maps Free API (real-time) ---
+        emaps_intensity = await self._emaps.get_current_intensity(sdk_location)
+        if emaps_intensity is not None:
+            self._cache.set(sdk_location, emaps_intensity)
+            return emaps_intensity, "Electricity Maps API (real-time)"
+
+        # --- Tier 3: Regional average fallback ---
         fallback = REGIONAL_FALLBACK_INTENSITIES.get(
             sdk_location,
             REGIONAL_FALLBACK_INTENSITIES[DEFAULT_LOCATION],
@@ -494,6 +599,7 @@ class CarbonService:
 
     async def close(self) -> None:
         await self._sdk.close()
+        await self._emaps.close()
 
 
 # ---------------------------------------------------------------------------
