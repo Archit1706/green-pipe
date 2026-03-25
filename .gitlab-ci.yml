@@ -1,0 +1,21 @@
+stages:
+  - build
+  - test
+
+build:
+  stage: build
+  image: alpine:latest
+  script:
+    - echo "Building the project..."
+    - sleep 5
+  tags:
+    - saas-linux-medium-amd64
+
+test:
+  stage: test
+  image: alpine:latest
+  script:
+    - echo "Running tests..."
+    - sleep 10
+  tags:
+    - saas-linux-medium-amd64
