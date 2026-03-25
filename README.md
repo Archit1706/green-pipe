@@ -73,7 +73,7 @@ GreenPipe is a **GitLab Duo Agent** that:
 
 ```bash
 # 1. Clone
-git clone <repo-url> green-pipe && cd green-pipe
+git clone https://gitlab.com/Archit17/green-pipe.git && cd green-pipe
 
 # 2. Install
 pip install -e ".[dev]"
@@ -96,6 +96,8 @@ pytest tests/ -v
 
 Interactive API docs: `http://localhost:8000/docs`
 
+**Live Demo:** [https://green-pipe.up.railway.app/docs](https://green-pipe.up.railway.app/docs)
+
 ---
 
 ## Agent Setup (GitLab Webhooks)
@@ -104,8 +106,8 @@ Configure two webhooks in **GitLab → Settings → Webhooks**:
 
 | Trigger | URL | Secret |
 | ------- | --- | ------ |
-| Pipeline events | `https://your-host/agent/webhooks/pipeline` | `GITLAB_WEBHOOK_SECRET` |
-| Comments | `https://your-host/agent/webhooks/mention` | `GITLAB_WEBHOOK_SECRET` |
+| Pipeline events | `https://<your-host>/agent/webhooks/pipeline` | `GITLAB_WEBHOOK_SECRET` |
+| Comments | `https://<your-host>/agent/webhooks/mention` | `GITLAB_WEBHOOK_SECRET` |
 
 Once configured, GreenPipe will:
 - Auto-post an SCI carbon report on every completed pipeline
@@ -394,6 +396,14 @@ GreenPipe applies the same optimisations it recommends to its users:
 
 See [`docs/SUSTAINABLE_DESIGN.md`](docs/SUSTAINABLE_DESIGN.md) for full details including
 GreenPipe's own SCI score (~0.00079 gCO₂e per pipeline analysis).
+
+---
+
+## Links
+
+- **Live API:** [green-pipe.up.railway.app/docs](https://green-pipe.up.railway.app/docs)
+- **GitLab Repo:** [gitlab.com/Archit17/green-pipe](https://gitlab.com/Archit17/green-pipe)
+- **Hackathon Repo:** [gitlab.com/gitlab-ai-hackathon/participants/13302889](https://gitlab.com/gitlab-ai-hackathon/participants/13302889)
 
 ---
 
