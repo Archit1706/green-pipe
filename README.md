@@ -27,45 +27,18 @@ GreenPipe is a **GitLab Duo Agent** that:
 
 ## GSF Standards Implemented
 
-| Standard | Version | Role |
-| -------- | ------- | ---- |
-| **Software Carbon Intensity (SCI)** | ISO/IEC 21031:2024 | `SCI = ((E × I) + M) / R` — canonical carbon formula |
-| **GSF Carbon Aware SDK** | latest | Real-time and forecast grid carbon intensity |
-| **GSF Impact Framework — Teads Curve** | latest | CPU utilization → energy estimation |
-| **ECO-CI SPECpower approach** | research | Runner hardware TDP mapping |
+| Standard                               | Version            | Role                                                 |
+| -------------------------------------- | ------------------ | ---------------------------------------------------- |
+| **Software Carbon Intensity (SCI)**    | ISO/IEC 21031:2024 | `SCI = ((E × I) + M) / R` — canonical carbon formula |
+| **GSF Carbon Aware SDK**               | latest             | Real-time and forecast grid carbon intensity         |
+| **GSF Impact Framework — Teads Curve** | latest             | CPU utilization → energy estimation                  |
+| **ECO-CI SPECpower approach**          | research           | Runner hardware TDP mapping                          |
 
 ---
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  GitLab Duo Agent (GreenPipe)                            │
-│  - Pipeline completion webhook  → auto-analyse + report  │
-│  - @greenpipe mention handler   → 10 on-demand commands  │
-│  - DistilBERT NLP classifier    → urgency classification │
-│  - Auto-deferral engine         → 3 safe modes           │
-└──────────────────────────────────────────────────────────┘
-                        ↓ calls
-┌──────────────────────────────────────────────────────────┐
-│  FastAPI Backend                                         │
-│  - Pipeline analyzer orchestrator                        │
-│  - SCI calculator  (ISO/IEC 21031:2024)                  │
-│  - Energy estimator (GSF Impact Framework Teads curve)   │
-│  - Carbon service  (GSF Carbon Aware SDK + multi-region) │
-│  - Code analyzer   (Anthropic Claude green profiler)     │
-│  - Analytics engine (historical CO₂e trends + leaderboard)│
-└──────────────────────────────────────────────────────────┘
-                        ↓ uses
-┌──────────────────────────────────────────────────────────┐
-│  GSF Standards & Tools                                   │
-│  - Carbon Aware SDK  (real-time carbon intensity API)    │
-│  - SCI Spec          (ISO/IEC 21031:2024)                │
-│  - Impact Framework  (Teads curve energy methodology)    │
-│  - ECO-CI approach   (SPECpower runner TDP mapping)      │
-│  - Anthropic Claude  (code efficiency analysis)          │
-└──────────────────────────────────────────────────────────┘
-```
+![GreenPipe architecture](docs/architecture.png)
 
 ---
 
@@ -104,29 +77,30 @@ Interactive API docs: `http://localhost:8000/docs`
 
 Configure two webhooks in **GitLab → Settings → Webhooks**:
 
-| Trigger | URL | Secret |
-| ------- | --- | ------ |
+| Trigger         | URL                                           | Secret                  |
+| --------------- | --------------------------------------------- | ----------------------- |
 | Pipeline events | `https://<your-host>/agent/webhooks/pipeline` | `GITLAB_WEBHOOK_SECRET` |
-| Comments | `https://<your-host>/agent/webhooks/mention` | `GITLAB_WEBHOOK_SECRET` |
+| Comments        | `https://<your-host>/agent/webhooks/mention`  | `GITLAB_WEBHOOK_SECRET` |
 
 Once configured, GreenPipe will:
-- Auto-post an SCI carbon report on every completed pipeline
-- Evaluate auto-deferral policy and reschedule deferrable pipelines
-- Respond to `@greenpipe` commands in MR comments:
 
-| Command | Effect |
-| ------- | ------ |
-| `@greenpipe analyze` | Analyse pipeline and post SCI report |
-| `@greenpipe report` | Generate SCI report for the MR |
-| `@greenpipe schedule` | Find lowest-carbon execution window |
-| `@greenpipe optimize` | Analyse MR code diff for energy inefficiencies (Claude) |
-| `@greenpipe regions` | Compare carbon intensity across runner regions |
-| `@greenpipe leaderboard` | Show contributor carbon-efficiency rankings |
-| `@greenpipe defer` | Defer pipeline to optimal low-carbon window |
-| `@greenpipe run-now` | Override deferral — run immediately |
-| `@greenpipe confirm-defer` | Confirm a pending deferral (approval-required mode) |
-| `@greenpipe why` | Explain urgency classification decision |
-| `@greenpipe help` | List all available commands |
+-   Auto-post an SCI carbon report on every completed pipeline
+-   Evaluate auto-deferral policy and reschedule deferrable pipelines
+-   Respond to `@greenpipe` commands in MR comments:
+
+| Command                    | Effect                                                  |
+| -------------------------- | ------------------------------------------------------- |
+| `@greenpipe analyze`       | Analyse pipeline and post SCI report                    |
+| `@greenpipe report`        | Generate SCI report for the MR                          |
+| `@greenpipe schedule`      | Find lowest-carbon execution window                     |
+| `@greenpipe optimize`      | Analyse MR code diff for energy inefficiencies (Claude) |
+| `@greenpipe regions`       | Compare carbon intensity across runner regions          |
+| `@greenpipe leaderboard`   | Show contributor carbon-efficiency rankings             |
+| `@greenpipe defer`         | Defer pipeline to optimal low-carbon window             |
+| `@greenpipe run-now`       | Override deferral — run immediately                     |
+| `@greenpipe confirm-defer` | Confirm a pending deferral (approval-required mode)     |
+| `@greenpipe why`           | Explain urgency classification decision                 |
+| `@greenpipe help`          | List all available commands                             |
 
 See [`AGENTS.md`](AGENTS.md) for the full agent specification.
 
@@ -136,42 +110,42 @@ See [`AGENTS.md`](AGENTS.md) for the full agent specification.
 
 ### Pipeline Analysis
 
-| Method | Path | Description |
-| ------ | ---- | ----------- |
-| `POST` | `/api/v1/pipeline/analyze` | Analyze pipeline (offline or live GitLab) |
-| `GET`  | `/api/v1/pipeline/{id}/report` | Fetch stored report |
-| `GET`  | `/api/v1/pipeline/{id}/sci` | Fetch SCI breakdown |
-| `GET`  | `/api/v1/pipeline/schedule` | Find carbon-optimal execution window |
-| `GET`  | `/api/v1/standards/info` | List implemented GSF standards |
-| `GET`  | `/api/v1/health` | Health check |
+| Method | Path                           | Description                               |
+| ------ | ------------------------------ | ----------------------------------------- |
+| `POST` | `/api/v1/pipeline/analyze`     | Analyze pipeline (offline or live GitLab) |
+| `GET`  | `/api/v1/pipeline/{id}/report` | Fetch stored report                       |
+| `GET`  | `/api/v1/pipeline/{id}/sci`    | Fetch SCI breakdown                       |
+| `GET`  | `/api/v1/pipeline/schedule`    | Find carbon-optimal execution window      |
+| `GET`  | `/api/v1/standards/info`       | List implemented GSF standards            |
+| `GET`  | `/api/v1/health`               | Health check                              |
 
 ### Analytics (Historical)
 
-| Method | Path | Description |
-| ------ | ---- | ----------- |
-| `GET`  | `/api/v1/analytics/summary` | Aggregate CO₂e and SCI stats |
-| `GET`  | `/api/v1/analytics/trends` | SCI trend grouped by day (up to 365 days) |
-| `GET`  | `/api/v1/analytics/top-consumers` | Highest-carbon pipeline runs |
-| `GET`  | `/api/v1/analytics/savings` | Estimated CO₂e savings from deferral |
-| `GET`  | `/api/v1/analytics/leaderboard` | Contributor carbon-efficiency rankings |
+| Method | Path                              | Description                               |
+| ------ | --------------------------------- | ----------------------------------------- |
+| `GET`  | `/api/v1/analytics/summary`       | Aggregate CO₂e and SCI stats              |
+| `GET`  | `/api/v1/analytics/trends`        | SCI trend grouped by day (up to 365 days) |
+| `GET`  | `/api/v1/analytics/top-consumers` | Highest-carbon pipeline runs              |
+| `GET`  | `/api/v1/analytics/savings`       | Estimated CO₂e savings from deferral      |
+| `GET`  | `/api/v1/analytics/leaderboard`   | Contributor carbon-efficiency rankings    |
 
 ### Agent Tools
 
-| Method | Path | Description |
-| ------ | ---- | ----------- |
-| `POST` | `/agent/tools/analyze_pipeline` | Analyze a pipeline (structured JSON output) |
-| `POST` | `/agent/tools/generate_sci_report` | Generate + optionally post MR comment |
-| `POST` | `/agent/tools/suggest_scheduling` | Best low-carbon execution window |
-| `POST` | `/agent/tools/classify_urgency` | NLP urgency classification |
-| `POST` | `/agent/tools/analyze_code_efficiency` | Claude-powered green code profiling |
-| `POST` | `/agent/tools/compare_regions` | Multi-region carbon intensity comparison |
+| Method | Path                                   | Description                                 |
+| ------ | -------------------------------------- | ------------------------------------------- |
+| `POST` | `/agent/tools/analyze_pipeline`        | Analyze a pipeline (structured JSON output) |
+| `POST` | `/agent/tools/generate_sci_report`     | Generate + optionally post MR comment       |
+| `POST` | `/agent/tools/suggest_scheduling`      | Best low-carbon execution window            |
+| `POST` | `/agent/tools/classify_urgency`        | NLP urgency classification                  |
+| `POST` | `/agent/tools/analyze_code_efficiency` | Claude-powered green code profiling         |
+| `POST` | `/agent/tools/compare_regions`         | Multi-region carbon intensity comparison    |
 
 ### Webhooks
 
-| Method | Path | Trigger |
-| ------ | ---- | ------- |
-| `POST` | `/agent/webhooks/pipeline` | GitLab pipeline completion event |
-| `POST` | `/agent/webhooks/mention` | `@greenpipe` mention in MR comment |
+| Method | Path                       | Trigger                            |
+| ------ | -------------------------- | ---------------------------------- |
+| `POST` | `/agent/webhooks/pipeline` | GitLab pipeline completion event   |
+| `POST` | `/agent/webhooks/mention`  | `@greenpipe` mention in MR comment |
 
 ---
 
@@ -204,17 +178,17 @@ Response (abbreviated):
 
 ```json
 {
-  "sci": {
-    "sci_score_gco2e": 4.83,
-    "energy_kwh": 0.011875,
-    "carbon_intensity_gco2_kwh": 386.0,
-    "methodology": "SCI ISO/IEC 21031:2024"
-  },
-  "scheduling": {
-    "urgency_class": "normal",
-    "can_defer": false,
-    "message": "Pipeline classified as normal — proceed as scheduled."
-  }
+    "sci": {
+        "sci_score_gco2e": 4.83,
+        "energy_kwh": 0.011875,
+        "carbon_intensity_gco2_kwh": 386.0,
+        "methodology": "SCI ISO/IEC 21031:2024"
+    },
+    "scheduling": {
+        "urgency_class": "normal",
+        "can_defer": false,
+        "message": "Pipeline classified as normal — proceed as scheduled."
+    }
 }
 ```
 
@@ -230,18 +204,18 @@ energy_kWh = (TDP_watts × teads_factor(cpu_util%) × duration_s) / 3 600 000
 
 **Teads curve** (CPU utilization % → TDP factor):
 
-| CPU% | 0 | 10 | 50 | 100 |
-| ---- | - | -- | -- | --- |
+| CPU%   | 0    | 10   | 50   | 100  |
+| ------ | ---- | ---- | ---- | ---- |
 | Factor | 0.12 | 0.32 | 0.75 | 1.02 |
 
 **Runner TDP values** (SPECpower-based):
 
-| Runner | TDP (W) |
-| ------ | ------- |
-| saas-linux-small-amd64 | 65 |
-| saas-linux-medium-amd64 | 95 |
-| saas-linux-large-amd64 | 125 |
-| saas-linux-xlarge-amd64 | 165 |
+| Runner                  | TDP (W) |
+| ----------------------- | ------- |
+| saas-linux-small-amd64  | 65      |
+| saas-linux-medium-amd64 | 95      |
+| saas-linux-large-amd64  | 125     |
+| saas-linux-xlarge-amd64 | 165     |
 
 ### SCI Calculation (ISO/IEC 21031:2024)
 
@@ -258,11 +232,11 @@ R = 1 pipeline_run           (functional unit)
 
 Fine-tuned DistilBERT (INT8 quantized, 58% less energy than FP32):
 
-| Class | Signals | Action |
-| ----- | ------- | ------ |
-| `urgent` | hotfix, critical, security, cve | Run immediately |
-| `normal` | feat, fix, ci, build | Run on schedule |
-| `deferrable` | docs, refactor, style, chore | Shift to low-carbon window |
+| Class        | Signals                         | Action                     |
+| ------------ | ------------------------------- | -------------------------- |
+| `urgent`     | hotfix, critical, security, cve | Run immediately            |
+| `normal`     | feat, fix, ci, build            | Run on schedule            |
+| `deferrable` | docs, refactor, style, chore    | Shift to low-carbon window |
 
 Keyword-based fallback activates automatically when the model directory
 (`models/urgency_classifier/`) is absent.
@@ -271,7 +245,7 @@ Keyword-based fallback activates automatically when the model directory
 
 ## Training the NLP Model (optional)
 
-The service works out-of-the-box with the keyword fallback.  To train the
+The service works out-of-the-box with the keyword fallback. To train the
 full DistilBERT model:
 
 ```bash
@@ -385,14 +359,14 @@ LOG_LEVEL=INFO
 
 GreenPipe applies the same optimisations it recommends to its users:
 
-- **INT8 quantized NLP model** — 58% less energy than FP32 DistilBERT
-- **1-hour carbon intensity cache** — 97% reduction in Carbon Aware SDK calls
-- **Keyword fallback** — zero ML inference cost when model absent
-- **Async I/O** — single process handles concurrent requests efficiently
-- **Lazy imports** — ML model not loaded until first inference request
-- **Parallel async region queries** — multi-region comparison with concurrent HTTP calls
-- **Bounded intensity cache** — max 256 entries with eviction to prevent memory leaks
-- **Input sanitization** — markdown injection prevention in all MR comments
+-   **INT8 quantized NLP model** — 58% less energy than FP32 DistilBERT
+-   **1-hour carbon intensity cache** — 97% reduction in Carbon Aware SDK calls
+-   **Keyword fallback** — zero ML inference cost when model absent
+-   **Async I/O** — single process handles concurrent requests efficiently
+-   **Lazy imports** — ML model not loaded until first inference request
+-   **Parallel async region queries** — multi-region comparison with concurrent HTTP calls
+-   **Bounded intensity cache** — max 256 entries with eviction to prevent memory leaks
+-   **Input sanitization** — markdown injection prevention in all MR comments
 
 See [`docs/SUSTAINABLE_DESIGN.md`](docs/SUSTAINABLE_DESIGN.md) for full details including
 GreenPipe's own SCI score (~0.00079 gCO₂e per pipeline analysis).
@@ -401,9 +375,9 @@ GreenPipe's own SCI score (~0.00079 gCO₂e per pipeline analysis).
 
 ## Links
 
-- **Live API:** [green-pipe.up.railway.app/docs](https://green-pipe.up.railway.app/docs)
-- **GitLab Repo:** [gitlab.com/Archit17/green-pipe](https://gitlab.com/Archit17/green-pipe)
-- **Hackathon Repo:** [gitlab.com/gitlab-ai-hackathon/participants/13302889](https://gitlab.com/gitlab-ai-hackathon/participants/13302889)
+-   **Live API:** [green-pipe.up.railway.app/docs](https://green-pipe.up.railway.app/docs)
+-   **GitLab Repo:** [gitlab.com/Archit17/green-pipe](https://gitlab.com/Archit17/green-pipe)
+-   **Hackathon Repo:** [gitlab.com/gitlab-ai-hackathon/participants/13302889](https://gitlab.com/gitlab-ai-hackathon/participants/13302889)
 
 ---
 
@@ -411,10 +385,10 @@ GreenPipe's own SCI score (~0.00079 gCO₂e per pipeline analysis).
 
 Built on **Green Software Foundation** standards:
 
-- **Carbon Aware SDK** — [github.com/Green-Software-Foundation/carbon-aware-sdk](https://github.com/Green-Software-Foundation/carbon-aware-sdk)
-- **Impact Framework** — [if.greensoftware.foundation](https://if.greensoftware.foundation/)
-- **SCI Specification** — [sci.greensoftware.foundation](https://sci.greensoftware.foundation/) (ISO/IEC 21031:2024)
-- **ECO-CI / Green Coding Berlin** — [green-coding.io/products/eco-ci](https://www.green-coding.io/products/eco-ci/) (SPECpower mapping)
+-   **Carbon Aware SDK** — [github.com/Green-Software-Foundation/carbon-aware-sdk](https://github.com/Green-Software-Foundation/carbon-aware-sdk)
+-   **Impact Framework** — [if.greensoftware.foundation](https://if.greensoftware.foundation/)
+-   **SCI Specification** — [sci.greensoftware.foundation](https://sci.greensoftware.foundation/) (ISO/IEC 21031:2024)
+-   **ECO-CI / Green Coding Berlin** — [green-coding.io/products/eco-ci](https://www.green-coding.io/products/eco-ci/) (SPECpower mapping)
 
 ## License
 
